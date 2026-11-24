@@ -15,9 +15,12 @@ use crate::gallery::{Gallery, GalleryContext, layout};
 use crate::library::lister::{ListResult, Lister};
 use crate::library::listing::ImageEntry;
 use crate::media::developed::DevelopedCache;
+use crate::media::rate::RateOutcome;
 use crate::media::remove::Removal;
 use crate::media::rotate::RotateOutcome;
+use crate::media::xmp::{REJECTED, Rating};
 use crate::orientations::Orientations;
+use crate::ratings::Ratings;
 use crate::repaint::Repaint;
 use crate::script::{Action, Script};
 use crate::theme;
@@ -61,6 +64,7 @@ pub struct App {
     developed: DevelopedCache,
     files: FileWorker,
     orientations: Orientations,
+    ratings: Ratings,
     gallery: Gallery,
     viewer: Option<Viewer>,
     fullscreen: bool,
@@ -93,6 +97,7 @@ impl App {
             developed,
             files: FileWorker::new(store, repaint.clone()),
             orientations: Orientations::default(),
+            ratings: Ratings::default(),
             gallery: Gallery::new(config.sort, config.thumb_scale, config.nested),
             viewer: None,
             fullscreen: startup.fullscreen,
@@ -263,6 +268,41 @@ impl App {
         }
     }
 
+    /// The rating to show for `entry`: the one given in this session, else the file's.
+    fn rating_of(&self, entry: &ImageEntry) -> Rating {
+        let from_viewer = self
+            .viewer
+            .as_ref()
+            .filter(|viewer| {
+                viewer
+                    .current()
+                    .is_some_and(|current| current.id == entry.id)
+            })
+            .and_then(|viewer| viewer.shown(&self.loader))
+            .map(|(loaded, _)| loaded.rating);
+        let from_file = from_viewer
+            .or_else(|| self.thumbs.peek(&entry.id).map(|thumb| thumb.rating))
+            .unwrap_or(0);
+        self.ratings.effective(&entry.id.path, from_file)
+    }
+
+    /// Rates the viewed or selected image. The mark shows at once; the file follows.
+    fn rate(&mut self, rating: Rating) {
+        let Some(entry) = self.target_entry() else {
+            self.say("Select an image to rate");
+            return;
+        };
+        self.ratings.set(entry.id.path.clone(), rating);
+        self.files.submit(entry, Job::Rate(rating));
+    }
+
+    fn toggle_reject(&mut self) {
+        let rejected = self
+            .target_entry()
+            .is_some_and(|entry| self.rating_of(&entry) == REJECTED);
+        self.rate(if rejected { 0 } else { REJECTED });
+    }
+
     fn remove(&mut self) {
         match self.target_entry() {
             Some(entry) => self.files.submit(entry, Job::Remove { permanently: false }),
@@ -279,6 +319,13 @@ impl App {
             (_, Ok(Outcome::Rotated(RotateOutcome::ViewOnly))) => {
                 self.say("Rotated for this session \u{b7} file has no EXIF orientation");
             }
+            (_, Ok(Outcome::Rated(RateOutcome::Saved))) => {}
+            (_, Ok(Outcome::Rated(RateOutcome::Unsupported))) => {
+                self.ratings.forget(&done.entry.id.path);
+                self.say(format!(
+                    "{name} \u{b7} this kind of file cannot hold a rating"
+                ));
+            }
             (_, Ok(Outcome::Removed(Removal::NeedsConsent))) => {
                 self.confirm_remove = Some(done.entry);
             }
@@ -290,6 +337,10 @@ impl App {
                 self.forget(&done.entry, ctx);
             }
             (Job::Rotate(_), Err(error)) => self.say(format!("Rotation not saved: {error}")),
+            (Job::Rate(_), Err(error)) => {
+                self.ratings.forget(&done.entry.id.path);
+                self.say(format!("Rating not saved: {error}"));
+            }
             (Job::Remove { .. }, Err(error)) => self.say(format!("{name} not deleted: {error}")),
         }
     }
@@ -340,7 +391,12 @@ impl App {
                 }
             }
             Command::Refresh => self.gallery.refresh(&mut self.lister),
-            Command::Select(direction) => self.gallery.move_selection(direction),
+            Command::Select(direction) => self.gallery.move_selection(direction, 1),
+            Command::SelectPage(direction) => {
+                self.gallery.move_selection(direction, layout::PAGE_ROWS);
+            }
+            Command::SelectFirst => self.gallery.select_end(false),
+            Command::SelectLast => self.gallery.select_end(true),
             Command::OpenSelected => {
                 if let Some((roll, index)) = self.gallery.selection {
                     self.run(Command::OpenImage { roll, index }, ctx);
@@ -412,6 +468,8 @@ impl App {
             Command::RotateCcw => self.rotate(3),
             Command::Rotate180 => self.rotate(2),
             Command::ToggleFullscreen => self.set_fullscreen(ctx, !self.fullscreen),
+            Command::Rate(stars) => self.rate(stars),
+            Command::ToggleReject => self.toggle_reject(),
             Command::Remove => self.remove(),
             Command::ConfirmRemove => {
                 if let Some(entry) = self.confirm_remove.take() {
@@ -521,7 +579,7 @@ impl App {
                 .map(|folder| folder.to_string_lossy().into_owned()),
         };
         let title =
-            subject.map_or_else(|| "rawv".to_owned(), |subject| format!("{subject} - rawv"));
+            subject.map_or_else(|| "rawv".to_owned(), |subject| format!("rawv - {subject}"));
         if title != self.title {
             ctx.send_viewport_cmd(ViewportCommand::Title(title.clone()));
             self.title = title;
@@ -574,6 +632,7 @@ impl App {
                 "size": loaded.map(|loaded| loaded.original_size),
                 "load_ms": loaded.map(|loaded| loaded.load_ms),
                 "orientation": orientation,
+                "rating": entry.map(|entry| self.rating_of(entry)),
             })
         });
         let rolls: Vec<serde_json::Value> = self
@@ -610,6 +669,7 @@ impl App {
             "toast": self.toast.as_ref().map(|toast| toast.text.clone()),
             "selection": self.gallery.selection,
             "selected_orientation": selected_orientation,
+            "selected_rating": self.gallery.selected_entry().map(|entry| self.rating_of(entry)),
             "thumb_scale": self.gallery.thumb_scale,
             "sort": format!("{:?}", self.gallery.sort),
             "nested": self.gallery.nested,
@@ -640,15 +700,16 @@ impl App {
             .show(ui, |ui| {
                 ui.horizontal_centered(|ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;
+                    if header_button(ui, "+", theme::INK, "Open folder (O)") {
+                        commands.push(Command::OpenFolderDialog);
+                    }
+                    ui.add_space(4.0);
                     if let Some(folder) = &self.gallery.folder {
                         commands.extend(breadcrumbs(ui, folder));
                     }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if header_button(ui, "Settings", theme::INK, "Settings (,)") {
                             commands.push(Command::ToggleSettings);
-                        }
-                        if header_button(ui, "+", theme::INK, "Open folder (O)") {
-                            commands.push(Command::OpenFolderDialog);
                         }
                         let all = "Expand / collapse all rolls (A)";
                         if header_button(ui, "All", theme::INK, all) {
@@ -948,7 +1009,9 @@ impl eframe::App for App {
                 loader: &self.loader,
                 thumbs: &self.thumbs,
                 orientations: &self.orientations,
+                ratings: &self.ratings,
                 show_info: self.config.show_info,
+                fullscreen: self.fullscreen,
                 wheel: self.config.wheel,
             };
             commands.extend(viewer.ui(ui, &cx));
@@ -960,6 +1023,7 @@ impl eframe::App for App {
                     thumbs: &mut self.thumbs,
                     lister: &mut self.lister,
                     orientations: &self.orientations,
+                    ratings: &self.ratings,
                 };
                 commands.extend(self.gallery.ui(ui, &mut cx));
             });

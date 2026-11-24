@@ -15,6 +15,8 @@ pub const META_MIN_HEIGHT: f32 = 70.0;
 /// Height of the caption of a roll without images.
 pub const EMPTY_ROLL_HEIGHT: f32 = 44.0;
 const BASE_FRAME: Vec2 = vec2(120.0, 78.0);
+/// Rows the selection moves with Page Up and Page Down.
+pub const PAGE_ROWS: usize = 4;
 /// Thumbnail size presets: label and scale.
 pub const THUMB_SIZES: [(&str, f32); 3] = [("S", 1.0), ("M", 1.6), ("L", 2.4)];
 

@@ -16,7 +16,9 @@ use crate::media::formats::Kind;
 use crate::media::load::{RawMode, Rendition, Source};
 use crate::media::orientation::Orientation;
 use crate::media::thumb::ContentRect;
+use crate::media::xmp::Rating;
 use crate::orientations::Orientations;
+use crate::ratings::Ratings;
 use crate::theme;
 use crate::thumbs::service::ThumbService;
 use loader::{FullLoader, LoadKey, LoadState, Loaded};
@@ -26,6 +28,8 @@ const MIN_ZOOM: f32 = 0.02;
 const ZOOM_STEP: f32 = 1.25;
 const EDGE_ZONE: f32 = 96.0;
 const INFO_HEIGHT: f32 = 56.0;
+/// Radius of the stars that show the rating.
+const RATING_STAR: f32 = 6.0;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Zoom {
@@ -55,7 +59,10 @@ pub struct ViewerContext<'a> {
     pub loader: &'a FullLoader,
     pub thumbs: &'a ThumbService,
     pub orientations: &'a Orientations,
+    pub ratings: &'a Ratings,
     pub show_info: bool,
+    /// Fullscreen shows the picture without marks.
+    pub fullscreen: bool,
     pub wheel: WheelAction,
 }
 
@@ -341,11 +348,27 @@ impl Viewer {
             self.handle_wheel(ui, cx.wheel, &mut commands);
         }
 
+        if !cx.fullscreen {
+            let rating = cx
+                .ratings
+                .effective(&entry.id.path, self.file_rating(&entry, cx));
+            let above_info = if cx.show_info { 44.0 } else { 18.0 };
+            let right = rect.right_bottom() - vec2(18.0, above_info);
+            draw::rating(&painter, right, rating, RATING_STAR);
+        }
         if cx.show_info {
             self.paint_info(ui, rect, &entry, &state);
         }
         commands.extend(self.edge_buttons(ui, rect, pointer));
         commands
+    }
+
+    /// The rating the file held when its picture or thumbnail was read.
+    fn file_rating(&self, entry: &ImageEntry, cx: &ViewerContext<'_>) -> Rating {
+        self.shown(cx.loader)
+            .map(|(loaded, _)| loaded.rating)
+            .or_else(|| cx.thumbs.peek(&entry.id).map(|thumb| thumb.rating))
+            .unwrap_or(0)
     }
 
     fn picture(&self, entry: &ImageEntry, cx: &ViewerContext<'_>) -> Option<Picture> {

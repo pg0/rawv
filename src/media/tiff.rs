@@ -13,6 +13,7 @@ pub const TAG_STRIP_OFFSETS: u16 = 0x0111;
 pub const TAG_ORIENTATION: u16 = 0x0112;
 pub const TAG_STRIP_BYTE_COUNTS: u16 = 0x0117;
 pub const TAG_SUB_IFDS: u16 = 0x014A;
+pub const TAG_XMP: u16 = 0x02BC;
 pub const TAG_JPEG_OFFSET: u16 = 0x0201;
 pub const TAG_JPEG_LENGTH: u16 = 0x0202;
 pub const TAG_PANASONIC_JPG_FROM_RAW: u16 = 0x002E;
@@ -185,6 +186,16 @@ impl<R: Read + Seek> TiffReader<R> {
         let end = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
         let text = String::from_utf8_lossy(&raw[..end]).trim().to_owned();
         Ok((!text.is_empty()).then_some(text))
+    }
+
+    /// The first bytes, at most `limit`, of a byte blob stored out of line.
+    pub fn blob(&mut self, entry: &Entry, limit: u32) -> io::Result<Vec<u8>> {
+        if !Self::is_blob(entry) {
+            return Ok(Vec::new());
+        }
+        let mut raw = vec![0u8; entry.count.min(limit) as usize];
+        self.read_at(self.u32_from(entry.value), &mut raw)?;
+        Ok(raw)
     }
 
     /// True for a byte blob (BYTE/UNDEFINED) stored out of line.

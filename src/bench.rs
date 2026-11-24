@@ -5,6 +5,7 @@ use std::time::Instant;
 
 use crate::media::formats::{self, Kind};
 use crate::media::load::{self, Rendition};
+use crate::media::pixels::Pixels;
 use crate::media::probe::MediaFile;
 use crate::media::thumb::{self, ThumbQuality};
 
@@ -20,6 +21,7 @@ pub fn probe_file(path: &Path) -> Result<(), String> {
     println!("orientation slot {:?}", probe.slot);
     println!("pixel size       {:?}", probe.pixel_size);
     println!("shot             {:?}", probe.shot);
+    println!("rating           {}", probe.rating);
     for blob in &probe.embedded {
         let size = source
             .read_embedded(*blob)
@@ -127,4 +129,35 @@ fn bench_folder(path: &Path) -> Result<(), String> {
 
 fn ms(started: Instant) -> f64 {
     started.elapsed().as_secs_f64() * 1000.0
+}
+
+/// Prints a checksum of the pixels of each rendition of a file. Equal sums before and
+/// after a change to the file mean its picture decodes to the same pixels.
+pub fn pixel_sums(path: &Path) -> Result<(), String> {
+    let kind = formats::kind_of(path).ok_or("unsupported file type")?;
+    let renditions: &[Rendition] = match kind {
+        Kind::Raw => &[Rendition::Preview, Rendition::Developed],
+        _ => &[Rendition::Preview],
+    };
+    for &rendition in renditions {
+        let image =
+            load::load_full(path, kind, rendition, u32::MAX, None).map_err(|e| e.to_string())?;
+        println!(
+            "{rendition:?} {}x{} {:016x}",
+            image.pixels.size[0],
+            image.pixels.size[1],
+            checksum(&image.pixels)
+        );
+    }
+    Ok(())
+}
+
+/// FNV-1a over the pixel bytes.
+fn checksum(pixels: &Pixels) -> u64 {
+    pixels
+        .data
+        .iter()
+        .fold(0xcbf2_9ce4_8422_2325, |hash, &byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
+        })
 }

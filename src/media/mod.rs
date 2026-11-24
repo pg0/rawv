@@ -6,12 +6,14 @@ pub mod load;
 pub mod orientation;
 pub mod pixels;
 pub mod probe;
+pub mod rate;
 pub mod raw;
 pub mod remove;
 pub mod render;
 pub mod rotate;
 pub mod thumb;
 pub mod tiff;
+pub mod xmp;
 
 use std::fmt;
 

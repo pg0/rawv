@@ -11,6 +11,7 @@ use super::orientation::Orientation;
 use super::pixels::{self, Channels, Pixels};
 use super::probe::{Embedded, MediaFile, Probe};
 use super::raw;
+use super::xmp::Rating;
 
 pub const THUMB_LONG_EDGE: u32 = 480;
 const MIN_EMBEDDED_LONG_EDGE: u32 = 96;
@@ -102,6 +103,8 @@ pub struct Thumb {
     pub orientation: Orientation,
     pub quality: ThumbQuality,
     pub content: ContentRect,
+    /// The rating stored in the file.
+    pub rating: Rating,
 }
 
 /// Creates a thumbnail of at least quality `want` where the file allows it.
@@ -114,7 +117,7 @@ pub fn make_thumb(path: &Path, kind: Kind, want: ThumbQuality) -> Result<Thumb, 
                 .with_guessed_format()?
                 .decode()
                 .map_err(MediaError::from_display)?;
-            scaled_thumb(pixels::from_dynamic(image), Orientation::NORMAL)
+            scaled_thumb(pixels::from_dynamic(image), Orientation::NORMAL, 0)
         }
     }
 }
@@ -130,7 +133,7 @@ fn jpeg_thumb(path: &Path, want: ThumbQuality) -> Result<Thumb, MediaError> {
     }
     let data = source.read_all()?;
     let pixels = pixels::decode_jpeg(&data, Channels::Rgb)?;
-    scaled_thumb(pixels, probe.orientation)
+    scaled_thumb(pixels, probe.orientation, probe.rating)
 }
 
 /// The EXIF thumbnail a camera stored in the file's head.
@@ -146,6 +149,7 @@ fn embedded_jpeg_thumb(source: &mut MediaFile, probe: &Probe) -> Option<Thumb> {
         pixels,
         orientation: probe.orientation,
         quality: ThumbQuality::Embedded,
+        rating: probe.rating,
     })
 }
 
@@ -161,7 +165,7 @@ fn raw_thumb(path: &Path, want: ThumbQuality) -> Result<Thumb, MediaError> {
         && let Ok(pixels) = pixels::decode_jpeg(&bytes, Channels::Rgba)
     {
         if size[0].max(size[1]) > THUMB_LONG_EDGE {
-            return scaled_thumb(pixels, probe.orientation);
+            return scaled_thumb(pixels, probe.orientation, probe.rating);
         }
         return Ok(Thumb {
             jpeg: bytes,
@@ -169,6 +173,7 @@ fn raw_thumb(path: &Path, want: ThumbQuality) -> Result<Thumb, MediaError> {
             pixels,
             orientation: probe.orientation,
             quality: ThumbQuality::Embedded,
+            rating: probe.rating,
         });
     }
     drop(source);
@@ -182,7 +187,7 @@ fn raw_thumb(path: &Path, want: ThumbQuality) -> Result<Thumb, MediaError> {
     } else {
         raw.orientation.unwrap_or(probe.orientation)
     };
-    scaled_thumb(raw.pixels, orientation)
+    scaled_thumb(raw.pixels, orientation, probe.rating)
 }
 
 /// Picks the smallest embedded JPEG whose long edge reaches `wanted_edge`.
@@ -202,7 +207,11 @@ fn pick_embedded(
     })
 }
 
-fn scaled_thumb(pixels: Pixels, orientation: Orientation) -> Result<Thumb, MediaError> {
+fn scaled_thumb(
+    pixels: Pixels,
+    orientation: Orientation,
+    rating: Rating,
+) -> Result<Thumb, MediaError> {
     let pixels = pixels.fit_within(THUMB_LONG_EDGE)?;
     let jpeg = pixels::encode_jpeg(&pixels, THUMB_JPEG_QUALITY)?;
     Ok(Thumb {
@@ -211,6 +220,7 @@ fn scaled_thumb(pixels: Pixels, orientation: Orientation) -> Result<Thumb, Media
         orientation,
         quality: ThumbQuality::Full,
         content: ContentRect::FULL,
+        rating,
     })
 }
 

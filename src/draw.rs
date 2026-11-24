@@ -1,9 +1,11 @@
 //! Painting helpers shared by the gallery and the viewer.
 
-use egui::{Color32, Mesh, Painter, Pos2, Rect, Shape, TextureId, pos2};
+use egui::{Color32, Mesh, Painter, Pos2, Rect, Shape, Stroke, TextureId, Vec2, pos2, vec2};
 
 use crate::media::orientation::Orientation;
 use crate::media::thumb::ContentRect;
+use crate::media::xmp::{REJECTED, Rating};
+use crate::theme;
 
 /// Paints a texture into `target`, applying `orientation` at draw time.
 ///
@@ -70,6 +72,66 @@ pub const WHOLE: Rect = Rect {
     min: Pos2::ZERO,
     max: pos2(1.0, 1.0),
 };
+
+/// Width and height of the mark [`rating`] draws with a star of radius `star`.
+pub fn rating_size(rating: Rating, star: f32) -> Vec2 {
+    let width = if rating == REJECTED {
+        FLAG_WIDTH
+    } else {
+        2.0 + DIGIT_WIDTH
+    };
+    vec2(width * star, star * 2.0)
+}
+
+/// Width of the flag, in star radiuses.
+const FLAG_WIDTH: f32 = 1.7;
+/// Width of the number beside the star, in star radiuses, with the gap before it.
+const DIGIT_WIDTH: f32 = 1.6;
+
+/// Draws a rating ending at `right`, vertically centred on it: a flag for a rejected
+/// picture, else a star and the number of stars. An unrated picture gets no mark.
+pub fn rating(painter: &Painter, right: Pos2, rating: Rating, star: f32) {
+    if rating == REJECTED {
+        let pole = right - vec2(FLAG_WIDTH * star, 0.0);
+        let stroke = Stroke::new((star * 0.28).max(1.0), theme::REJECT);
+        painter.line_segment([pole - vec2(0.0, star), pole + vec2(0.0, star)], stroke);
+        painter.add(Shape::convex_polygon(
+            vec![
+                pole - vec2(0.0, star),
+                pole + vec2(FLAG_WIDTH * star, -0.45 * star),
+                pole + vec2(0.0, 0.1 * star),
+            ],
+            theme::REJECT,
+            Stroke::NONE,
+        ));
+        return;
+    }
+    if rating <= 0 {
+        return;
+    }
+    painter.text(
+        right,
+        egui::Align2::RIGHT_CENTER,
+        rating.to_string(),
+        theme::mono(star * 2.3),
+        theme::ACCENT,
+    );
+    let center = right - vec2((DIGIT_WIDTH + 1.0) * star, 0.0);
+    let mut mesh = Mesh::default();
+    mesh.colored_vertex(center, theme::ACCENT);
+    for point in 0..10u8 {
+        let angle = (f32::from(point) * 36.0 - 90.0).to_radians();
+        let reach = if point % 2 == 0 { star } else { star * 0.42 };
+        mesh.colored_vertex(
+            center + vec2(angle.cos(), angle.sin()) * reach,
+            theme::ACCENT,
+        );
+    }
+    for point in 0..10u32 {
+        mesh.add_triangle(0, 1 + point, 1 + (point + 1) % 10);
+    }
+    painter.add(Shape::mesh(mesh));
+}
 
 /// A small triangle pointing right (collapsed) or down (expanded).
 pub fn chevron(painter: &Painter, center: Pos2, expanded: bool, color: Color32) {

@@ -20,6 +20,10 @@ pub enum Command {
     GoParent,
     Refresh,
     Select(Direction),
+    /// Moves the selection several rows up or down.
+    SelectPage(Direction),
+    SelectFirst,
+    SelectLast,
     OpenSelected,
     /// Opens image `index` of gallery roll `roll` in the viewer.
     OpenImage {
@@ -55,6 +59,10 @@ pub enum Command {
     RotateCw,
     RotateCcw,
     Rotate180,
+    /// Gives the viewed or selected image 1 to 5 stars; 0 takes the rating away.
+    Rate(i8),
+    /// Marks the image as rejected, or takes that mark away.
+    ToggleReject,
     ToggleFullscreen,
     /// Removes the viewed or selected image: to the recycle bin where there is one.
     Remove,
@@ -134,6 +142,10 @@ const BINDINGS: &[Binding] = &[
     bind(NONE, Key::ArrowLeft, GALLERY, || Command::Select(Direction::Left), None),
     bind(NONE, Key::ArrowUp, GALLERY, || Command::Select(Direction::Up), None),
     bind(NONE, Key::ArrowDown, GALLERY, || Command::Select(Direction::Down), None),
+    bind(NONE, Key::PageUp, GALLERY, || Command::SelectPage(Direction::Up), Some(("Page Up / Down", "Move selection several rows"))),
+    bind(NONE, Key::PageDown, GALLERY, || Command::SelectPage(Direction::Down), None),
+    bind(NONE, Key::Home, GALLERY, || Command::SelectFirst, Some(("Home / End", "First / last image"))),
+    bind(NONE, Key::End, GALLERY, || Command::SelectLast, None),
     bind(NONE, Key::Enter, GALLERY, || Command::OpenSelected, Some(("Enter / Click", "Open image"))),
     bind(NONE, Key::Backspace, GALLERY, || Command::GoParent, Some(("Backspace", "Parent folder"))),
     bind(NONE, Key::A, GALLERY, || Command::ToggleAllRolls, Some(("A", "Expand / collapse all"))),
@@ -150,6 +162,13 @@ const BINDINGS: &[Binding] = &[
     bind(NONE, Key::U, None, || Command::Rotate180, Some(("U", "Rotate 180\u{b0}"))),
     bind(NONE, Key::W, None, || Command::ToggleWheelAction, Some(("W", "Wheel zooms or steps (Ctrl+Wheel: the other)"))),
     bind(NONE, Key::P, None, || Command::CycleRawMode, Some(("P", "RAW: camera preview / automatic / full size"))),
+    bind(NONE, Key::Num1, None, || Command::Rate(1), Some(("1 - 5", "Rate with stars"))),
+    bind(NONE, Key::Num2, None, || Command::Rate(2), None),
+    bind(NONE, Key::Num3, None, || Command::Rate(3), None),
+    bind(NONE, Key::Num4, None, || Command::Rate(4), None),
+    bind(NONE, Key::Num5, None, || Command::Rate(5), None),
+    bind(NONE, Key::Num0, None, || Command::Rate(0), Some(("0", "Remove the rating"))),
+    bind(NONE, Key::X, None, || Command::ToggleReject, Some(("X", "Reject / take back"))),
     bind(NONE, Key::F, None, || Command::ToggleFullscreen, Some(("F / F11 / Double click", "Fullscreen"))),
     bind(NONE, Key::F11, None, || Command::ToggleFullscreen, None),
     bind(NONE, Key::Delete, None, || Command::Remove, Some(("Delete", "Move image to the recycle bin"))),
@@ -232,6 +251,10 @@ pub fn parse(text: &str) -> Option<Command> {
         ("right", None) => Command::Select(Direction::Right),
         ("up", None) => Command::Select(Direction::Up),
         ("down", None) => Command::Select(Direction::Down),
+        ("page-up", None) => Command::SelectPage(Direction::Up),
+        ("page-down", None) => Command::SelectPage(Direction::Down),
+        ("select-first", None) => Command::SelectFirst,
+        ("select-last", None) => Command::SelectLast,
         ("open-selected", None) => Command::OpenSelected,
         ("toggle-all", None) => Command::ToggleAllRolls,
         ("nested", None) => Command::ToggleNested,
@@ -256,6 +279,14 @@ pub fn parse(text: &str) -> Option<Command> {
         ("rotate-cw", None) => Command::RotateCw,
         ("rotate-ccw", None) => Command::RotateCcw,
         ("rotate-180", None) => Command::Rotate180,
+        ("rate", Some(stars)) => Command::Rate(
+            stars
+                .trim()
+                .parse()
+                .ok()
+                .filter(|stars| (0..=5).contains(stars))?,
+        ),
+        ("reject", None) => Command::ToggleReject,
         ("fullscreen", None) => Command::ToggleFullscreen,
         ("remove", None) => Command::Remove,
         ("confirm-remove", None) => Command::ConfirmRemove,
@@ -278,6 +309,8 @@ mod tests {
             parse(r"open:C:\photos\roll 1"),
             Some(Command::Open(PathBuf::from(r"C:\photos\roll 1")))
         );
+        assert_eq!(parse("rate:4"), Some(Command::Rate(4)));
+        assert_eq!(parse("rate:9"), None);
         assert_eq!(parse("nonsense"), None);
         assert_eq!(parse("next:extra"), None);
     }

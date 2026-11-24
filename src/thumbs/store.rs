@@ -8,9 +8,13 @@ use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
 
 use crate::media::orientation::Orientation;
 use crate::media::thumb::{ContentRect, Thumb, ThumbQuality};
+use crate::media::xmp::Rating;
 
-const TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("thumbs_v1");
-const HEADER_LEN: usize = 10;
+const TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("thumbs_v2");
+/// The table of the format before ratings were kept. It is deleted when the store opens.
+const OLD_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("thumbs_v1");
+const HEADER_LEN: usize = 11;
+const RATING_AT: usize = 10;
 const MAX_BATCH: usize = 256;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -18,6 +22,7 @@ pub struct StoredThumb {
     pub quality: ThumbQuality,
     pub orientation: Orientation,
     pub content: ContentRect,
+    pub rating: Rating,
     pub jpeg: Vec<u8>,
 }
 
@@ -35,6 +40,7 @@ impl StoredThumb {
             let scaled = (value.clamp(0.0, 1.0) * f32::from(u16::MAX)).round() as u16;
             bytes.extend_from_slice(&scaled.to_le_bytes());
         }
+        bytes.push(self.rating.cast_unsigned());
         bytes.extend_from_slice(&self.jpeg);
         bytes
     }
@@ -51,6 +57,7 @@ impl StoredThumb {
                 min: [unit(2), unit(4)],
                 max: [unit(6), unit(8)],
             },
+            rating: header[RATING_AT].cast_signed(),
             jpeg: jpeg.to_vec(),
         })
     }
@@ -64,6 +71,10 @@ enum Write {
     SetOrientation {
         key: String,
         orientation: Orientation,
+    },
+    SetRating {
+        key: String,
+        rating: Rating,
     },
 }
 
@@ -88,6 +99,7 @@ impl ThumbStore {
         let (tx, rx) = mpsc::channel::<Write>();
         let writer_db = Arc::clone(&database);
         std::thread::spawn(move || {
+            let _ = delete_old_table(&writer_db);
             while let Ok(first) = rx.recv() {
                 let mut batch = vec![first];
                 batch.extend(rx.try_iter().take(MAX_BATCH - 1));
@@ -119,6 +131,7 @@ impl ThumbStore {
             quality: thumb.quality,
             orientation: thumb.orientation,
             content: thumb.content,
+            rating: thumb.rating,
             jpeg: thumb.jpeg.clone(),
         };
         self.send(Write::Put {
@@ -129,6 +142,10 @@ impl ThumbStore {
 
     pub fn set_orientation(&self, key: String, orientation: Orientation) {
         self.send(Write::SetOrientation { key, orientation });
+    }
+
+    pub fn set_rating(&self, key: String, rating: Rating) {
+        self.send(Write::SetRating { key, rating });
     }
 
     fn send(&self, write: Write) {
@@ -148,17 +165,38 @@ fn write_batch(database: &Database, batch: Vec<Write>) -> Result<(), redb::Error
                     table.insert(key.as_str(), value.as_slice())?;
                 }
                 Write::SetOrientation { key, orientation } => {
-                    let existing = table.get(key.as_str())?.map(|v| v.value().to_vec());
-                    if let Some(mut value) = existing
-                        && value.len() >= HEADER_LEN
-                    {
-                        value[1] = orientation.to_exif() as u8;
-                        table.insert(key.as_str(), value.as_slice())?;
-                    }
+                    set_header_byte(&mut table, &key, 1, orientation.to_exif() as u8)?;
+                }
+                Write::SetRating { key, rating } => {
+                    set_header_byte(&mut table, &key, RATING_AT, rating.cast_unsigned())?;
                 }
             }
         }
     }
+    transaction.commit()?;
+    Ok(())
+}
+
+/// Changes one byte of the header stored for `key`, when there is an entry.
+fn set_header_byte(
+    table: &mut redb::Table<&str, &[u8]>,
+    key: &str,
+    index: usize,
+    byte: u8,
+) -> Result<(), redb::Error> {
+    let existing = table.get(key)?.map(|value| value.value().to_vec());
+    if let Some(mut value) = existing
+        && value.len() >= HEADER_LEN
+    {
+        value[index] = byte;
+        table.insert(key, value.as_slice())?;
+    }
+    Ok(())
+}
+
+fn delete_old_table(database: &Database) -> Result<(), redb::Error> {
+    let transaction = database.begin_write()?;
+    transaction.delete_table(OLD_TABLE)?;
     transaction.commit()?;
     Ok(())
 }
@@ -183,6 +221,7 @@ mod tests {
                 min: [0.0, 0.125],
                 max: [1.0, 0.875],
             },
+            rating: 4,
         }
     }
 

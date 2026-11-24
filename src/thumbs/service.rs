@@ -10,6 +10,7 @@ use crate::media::formats::Kind;
 use crate::media::orientation::Orientation;
 use crate::media::pixels::{self, Channels, Pixels};
 use crate::media::thumb::{self, ContentRect, ThumbQuality};
+use crate::media::xmp::Rating;
 use crate::repaint::Repaint;
 use crate::texture;
 use crate::workers::{self, WantedPool};
@@ -32,6 +33,7 @@ struct Payload {
     orientation: Orientation,
     quality: ThumbQuality,
     content: ContentRect,
+    rating: Rating,
 }
 
 pub struct ThumbTexture {
@@ -41,6 +43,8 @@ pub struct ThumbTexture {
     pub orientation: Orientation,
     pub quality: ThumbQuality,
     pub content: ContentRect,
+    /// The rating stored in the file when the thumbnail was made.
+    pub rating: Rating,
     /// Set when a sharper version was requested and could not be made.
     sharper_unavailable: bool,
     last_used: u64,
@@ -95,6 +99,7 @@ impl ThumbService {
                         orientation: payload.orientation,
                         quality: payload.quality,
                         content: payload.content,
+                        rating: payload.rating,
                         sharper_unavailable: false,
                         last_used: self.frame,
                     })
@@ -200,6 +205,7 @@ fn produce(store: &ThumbStore, request: &Request) -> Result<Payload, String> {
             orientation: stored.orientation,
             quality: stored.quality,
             content: stored.content,
+            rating: stored.rating,
         });
     }
     let thumb = thumb::make_thumb(&request.id.path, request.kind, request.want)
@@ -210,5 +216,6 @@ fn produce(store: &ThumbStore, request: &Request) -> Result<Payload, String> {
         orientation: thumb.orientation,
         quality: thumb.quality,
         content: thumb.content,
+        rating: thumb.rating,
     })
 }

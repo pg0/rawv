@@ -66,10 +66,13 @@ class Session:
         return None
 
 
-def probe(path):
-    out = subprocess.run([str(CLI), "probe", str(path)], capture_output=True, text=True, timeout=60).stdout
-    for line in out.splitlines():
-        if line.startswith("orientation "):
+def cli(*arguments):
+    return subprocess.run([str(CLI), *map(str, arguments)], capture_output=True, text=True, timeout=120).stdout
+
+
+def probe(path, field="orientation"):
+    for line in cli("probe", path).splitlines():
+        if line.startswith(field + " "):
             return int(line.split()[1])
     return None
 
@@ -78,6 +81,7 @@ def gallery(session):
     states = session.run(session.photos, [
         "dump",
         "right", "right", "down", "dump",
+        "select-first", "dump", "page-down", "dump", "select-last", "dump", "select-first", "right", "right", "down",
         "toggle-all", "dump", "toggle-all", "toggle-all", "dump",
         "sort", "dump", "sort", "sort", "sort",
         "thumb-size", "dump", "thumb-size", "thumb-size",
@@ -87,10 +91,10 @@ def gallery(session):
         "parent", "dump",
         "quit",
     ])
-    check("gallery: ten state dumps", len(states) == 10, f"got {len(states)}")
-    if len(states) != 10:
+    check("gallery: thirteen state dumps", len(states) == 13, f"got {len(states)}")
+    if len(states) != 13:
         return
-    first, selected, expanded, collapsed, sorted_desc, medium, larger, wheel, entered, parent = states
+    first, selected, home, paged, end, expanded, collapsed, sorted_desc, medium, larger, wheel, entered, parent = states
     titles = [roll["title"] for roll in first["rolls"]]
     counts = [roll["images"] for roll in first["rolls"]]
     check("gallery: folder and subfolders become rolls",
@@ -100,6 +104,12 @@ def gallery(session):
     check("gallery: only the open folder starts expanded",
           [roll["expanded"] for roll in first["rolls"]] == [True] + [False] * 6)
     check("gallery: arrow keys move the selection by column and row", selected["selection"] == [0, 11], str(selected["selection"]))
+    check("gallery: Home selects the first image", home["selection"] == [0, 0], str(home["selection"]))
+    check("gallery: Page Down moves the selection several rows", paged["selection"] not in ([0, 0], home["selection"]) and paged["selection"][0] >= 0,
+          str(paged["selection"]))
+    last_roll, last_index = end["selection"]
+    check("gallery: End selects the last image of the last roll",
+          last_roll > 0 and last_index == end["rolls"][last_roll]["images"] - 1, str(end["selection"]))
     check("gallery: toggle-all expands every roll", all(roll["expanded"] for roll in expanded["rolls"]))
     check("gallery: toggle-all twice returns to all expanded", all(roll["expanded"] for roll in collapsed["rolls"]))
     check("gallery: sort cycles to name descending",
@@ -407,6 +417,44 @@ def delete(session):
           and "deleted" in (deleted["toast"] or ""), str(deleted["toast"]))
 
 
+def rating(session):
+    raw = session.photos / "DSC00000.ARW"
+    original = raw.read_bytes()
+    states = session.run(session.photos, ["right", "rate:4", "dump", "reject", "dump", "reject", "dump", "quit"])
+    check("rating: three state dumps", len(states) == 3, f"got {len(states)}")
+    if len(states) != 3:
+        return
+    check("rating: a number key rates the selected image", states[0]["selected_rating"] == 4, str(states[0]["selected_rating"]))
+    check("rating: X rejects it", states[1]["selected_rating"] == -1, str(states[1]["selected_rating"]))
+    check("rating: X again takes the mark back", states[2]["selected_rating"] == 0, str(states[2]["selected_rating"]))
+    check("rating: a RAW file with a rating field is changed in place and restored exactly", raw.read_bytes() == original)
+
+    states = session.run(session.photos, ["right", "rate:2", "dump", "quit"])
+    changed = raw.read_bytes()
+    differing = sum(1 for a, b in zip(original, changed) if a != b)
+    check("rating: two stars change one byte of the RAW file",
+          len(changed) == len(original) and differing == 1 and probe(raw, "rating") == 2, f"{differing} bytes")
+
+    jpeg = session.photos / "IMG_0002.JPG"
+    size, modified, pixels = jpeg.stat().st_size, jpeg.stat().st_mtime_ns, cli("pixels", jpeg)
+    states = session.run(jpeg, ["rate:5", "dump", "quit"])
+    check("rating: the viewer shows the new rating at once", len(states) == 1 and states[0]["viewer"]["rating"] == 5)
+    check("rating: a JPEG without a rating field gets one; picture and date stay",
+          probe(jpeg, "rating") == 5 and jpeg.stat().st_size > size and jpeg.stat().st_mtime_ns == modified
+          and cli("pixels", jpeg) == pixels and pixels != "", cli("pixels", jpeg))
+    check("rating: no helper file is left behind", not list(session.photos.glob("*.rawv-part")) and not list(session.photos.glob("*.xmp")))
+    states = session.run(jpeg, ["dump", "escape", "dump", "quit"])
+    check("rating: the rating is read back from the file",
+          len(states) == 2 and states[0]["viewer"]["rating"] == 5 and states[1]["selected_rating"] == 5, str(states and states[0]["viewer"]))
+
+    png = session.photos / "graphic.png"
+    before = png.read_bytes()
+    states = session.run(png, ["rate:3", "dump", "quit"])
+    check("rating: a file that cannot hold a rating says so and stays untouched",
+          len(states) == 1 and "cannot hold a rating" in (states[0]["toast"] or "") and states[0]["viewer"]["rating"] == 0
+          and png.read_bytes() == before, str(states and states[0]["toast"]))
+
+
 SESSIONS = {
     "gallery": gallery,
     "viewer": viewer,
@@ -418,6 +466,7 @@ SESSIONS = {
     "settings": settings,
     "window": window,
     "delete": delete,
+    "rating": rating,
 }
 
 

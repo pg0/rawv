@@ -11,6 +11,7 @@ use super::orientation::Orientation;
 use super::pixels::{self, Channels, Pixels};
 use super::probe::{self, MediaFile, Probe, ShotInfo};
 use super::raw;
+use super::xmp::Rating;
 
 /// Camera previews with a long edge below this many pixels count as small.
 const SMALL_PREVIEW_LONG_EDGE: u32 = 3000;
@@ -91,6 +92,8 @@ pub struct FullImage {
     pub source: Source,
     /// The developed image came from the local cache.
     pub cached: bool,
+    /// The rating stored in the file.
+    pub rating: Rating,
 }
 
 pub fn load_full(
@@ -166,6 +169,7 @@ pub fn load_full(
         pixels: pixels.fit_within(max_side)?,
         original_size,
         orientation,
+        rating: probe.rating,
         shot: probe.shot,
         source,
         cached,

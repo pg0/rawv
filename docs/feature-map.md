@@ -25,6 +25,7 @@ User-facing feature, where it lives, and the script word that triggers it
 | Enter a subfolder | `Command::Open` | click roll title, breadcrumb |
 | Parent folder | `Command::GoParent` | `parent`, `Backspace` |
 | Move selection | `Gallery::move_selection` | `left` `right` `up` `down`, arrow keys |
+| Move selection by pages, to first or last image | `Gallery::move_selection`, `Gallery::select_end` | `page-up` `page-down` `select-first` `select-last`, Page Up, Page Down, Home, End |
 | Open image | `Command::OpenImage` | click frame, `open-selected`, `Enter` |
 | Thumbnail size | `Command::ScaleThumbs` | `thumbs-larger`, `thumbs-smaller`, `+` `-`, Ctrl+wheel |
 | Thumbnail size S / M / L | `Command::CycleThumbSize`, `layout::THUMB_SIZES` | `thumb-size`, `T`, `Size` button |
@@ -55,6 +56,9 @@ User-facing feature, where it lives, and the script word that triggers it
 |---|---|---|
 | Fullscreen | `App::set_fullscreen` | `fullscreen`, `F`, F11, double click in viewer |
 | Rotate 90° / 180°, saved in the file | `App::rotate`, `media::rotate::persist` | `rotate-cw` `rotate-ccw` `rotate-180`, `R`, `L`, `U` |
+| Rate with 1 to 5 stars, saved in the file | `App::rate`, `media::rate::persist` | `rate:N`, `1` to `5`, `0` removes |
+| Reject mark, saved in the file | `App::toggle_reject` | `reject`, `X` |
+| Rating shown bottom right, not in fullscreen | `draw::rating` | automatic |
 | Delete to the recycle bin; asks before deleting for good where there is none | `App::remove`, `media::remove` | `remove`, `confirm-remove`, Delete, Enter in the question |
 | Help | `App::paint_help` | `help`, `H`, F1 |
 | Settings panel | `App::settings_panel` | `settings`, `,`, `Settings` button |

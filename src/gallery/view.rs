@@ -11,18 +11,23 @@ use crate::draw;
 use crate::library::lister::Lister;
 use crate::library::listing::ImageEntry;
 use crate::media::formats::Kind;
+use crate::media::xmp::REJECTED;
 use crate::orientations::Orientations;
+use crate::ratings::Ratings;
 use crate::theme;
 use crate::thumbs::service::{ThumbService, ThumbState};
 
 const SPROCKET_PITCH: f32 = 14.0;
 const SPROCKET_RADIUS: f32 = 2.2;
 const LABEL_HEIGHT: f32 = 14.0;
+/// Radius of the stars drawn on a rated frame.
+const RATING_STAR: f32 = 4.0;
 
 pub struct GalleryContext<'a> {
     pub thumbs: &'a mut ThumbService,
     pub lister: &'a mut Lister,
     pub orientations: &'a Orientations,
+    pub ratings: &'a Ratings,
 }
 
 struct RollView<'a> {
@@ -394,8 +399,10 @@ impl RollView<'_> {
             .on_hover_text(&entry.name);
         let painter = ui.painter();
         let shown_pixels = frame.width() * ui.ctx().pixels_per_point();
+        let mut rating = cx.ratings.effective(&entry.id.path, 0);
         match cx.thumbs.lookup(entry, shown_pixels) {
             ThumbState::Ready(thumb) => {
+                rating = cx.ratings.effective(&entry.id.path, thumb.rating);
                 let orientation = cx.orientations.effective(&entry.id.path, thumb.orientation);
                 let size = draw::shown_size(thumb.size, orientation, thumb.content);
                 let crop = draw::cover_crop(size[0] / size[1], frame.width() / frame.height());
@@ -422,6 +429,20 @@ impl RollView<'_> {
                     theme::FAINT,
                 );
             }
+        }
+        if rating == REJECTED {
+            painter.rect_filled(frame, 0.0, Color32::from_black_alpha(150));
+        }
+        if rating != 0 {
+            let size = draw::rating_size(rating, RATING_STAR) + vec2(6.0, 4.0);
+            let pill = Rect::from_min_size(frame.right_bottom() - size - vec2(3.0, 3.0), size);
+            painter.rect_filled(pill, 2.0, Color32::from_black_alpha(170));
+            draw::rating(
+                painter,
+                pill.right_center() - vec2(3.0, 0.0),
+                rating,
+                RATING_STAR,
+            );
         }
         if entry.kind == Kind::Raw {
             let tag = Rect::from_min_size(frame.right_top() + vec2(-29.0, 3.0), vec2(26.0, 13.0));

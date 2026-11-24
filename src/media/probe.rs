@@ -11,12 +11,16 @@ use std::path::Path;
 use super::formats::Kind;
 use super::orientation::Orientation;
 use super::tiff::{self, Entry, TiffReader};
+use super::xmp::{self, Rating};
 
 /// How much of a file is read up front.
 const HEAD_BYTES: u64 = 128 * 1024;
 const MAX_IFDS: usize = 12;
 const MIN_EMBEDDED_BYTES: u64 = 512;
 const MAX_EMBEDDED_BYTES: u64 = 128 * 1024 * 1024;
+const XMP_SEGMENT_HEADER: &[u8] = b"http://ns.adobe.com/xap/1.0/\0";
+/// A rating stands near the start of its XMP packet; no more than this is read to find it.
+const XMP_READ_LIMIT: u32 = 64 * 1024;
 /// `PhotometricInterpretation` values of sensor data, which is not a viewable JPEG even
 /// when stored with JPEG compression: colour filter array and linear raw.
 const SENSOR_PHOTOMETRIC: [u32; 2] = [32803, 34892];
@@ -172,6 +176,8 @@ pub struct Probe {
     /// Stored pixel size of the main image, when the container states it.
     pub pixel_size: Option<[u32; 2]>,
     pub shot: ShotInfo,
+    /// The rating in the file's XMP metadata; 0 when it has none.
+    pub rating: Rating,
 }
 
 /// Probes JPEG bytes. `data` may be only the head of a file.
@@ -198,6 +204,11 @@ pub fn probe_jpeg(data: &[u8]) -> Probe {
                 if let Ok((mut reader, first)) = TiffReader::open(Cursor::new(data), base) {
                     walk(&mut reader, first, &mut probe);
                 }
+            }
+            0xE1 if data.get(body..body + XMP_SEGMENT_HEADER.len()) == Some(XMP_SEGMENT_HEADER) => {
+                let end = (pos + 2 + segment_len).min(data.len());
+                let packet = &data[body + XMP_SEGMENT_HEADER.len()..end];
+                probe.rating = xmp::read_rating(packet).unwrap_or(probe.rating);
             }
             0xC0..=0xCF if !matches!(marker, 0xC4 | 0xC8 | 0xCC) => {
                 if let Some(frame) = data.get(body + 1..body + 5) {
@@ -285,6 +296,11 @@ fn read_main_ifd<R: Read + Seek>(reader: &mut TiffReader<R>, entries: &[Entry], 
             pos: entry.value_pos,
             big_endian: reader.big_endian(),
         });
+    }
+    if let Some(entry) = tiff::find(entries, tiff::TAG_XMP)
+        && let Ok(packet) = reader.blob(entry, XMP_READ_LIMIT)
+    {
+        probe.rating = xmp::read_rating(&packet).unwrap_or(probe.rating);
     }
     probe.shot.make = ascii(reader, entries, tiff::TAG_MAKE);
     probe.shot.model = ascii(reader, entries, tiff::TAG_MODEL);

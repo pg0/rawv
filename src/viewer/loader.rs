@@ -14,6 +14,7 @@ use crate::media::formats::Kind;
 use crate::media::load::{self, DevelopSlot, FullImage, Rendition, Source};
 use crate::media::orientation::Orientation;
 use crate::media::probe::ShotInfo;
+use crate::media::xmp::Rating;
 use crate::repaint::Repaint;
 use crate::texture;
 use crate::workers::{self, WantedPool};
@@ -51,6 +52,8 @@ pub struct Loaded {
     pub shot: ShotInfo,
     pub source: Source,
     pub cached: bool,
+    /// The rating stored in the file when it was loaded.
+    pub rating: Rating,
     pub load_ms: f32,
 }
 
@@ -123,6 +126,7 @@ impl FullLoader {
                         shot: image.shot,
                         source: image.source,
                         cached: image.cached,
+                        rating: image.rating,
                         load_ms,
                     }),
                     Err(error) => Slot::Failed(error.to_string()),

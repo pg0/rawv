@@ -13,6 +13,7 @@ pub const INK_BRIGHT: Color32 = Color32::WHITE;
 pub const MUTED: Color32 = Color32::from_rgb(0x9a, 0x9a, 0x9a);
 pub const FAINT: Color32 = Color32::from_rgb(0x55, 0x55, 0x55);
 pub const ACCENT: Color32 = Color32::from_rgb(0xe2, 0xb7, 0x3a);
+pub const REJECT: Color32 = Color32::from_rgb(0xe0, 0x4f, 0x3f);
 pub const ON_ACCENT: Color32 = Color32::from_rgb(0x11, 0x11, 0x11);
 pub const STRIP: Color32 = Color32::from_rgb(0x0c, 0x0c, 0x0c);
 pub const SPROCKET: Color32 = Color32::BLACK;

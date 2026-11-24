@@ -1,18 +1,21 @@
 //! Changes to photo files, done in the background one at a time and in order:
-//! rotating and removing.
+//! rotating, rating and removing.
 
 use std::sync::mpsc::{self, Receiver, Sender};
 
 use crate::library::listing::ImageEntry;
 use crate::media::orientation::Orientation;
+use crate::media::rate::{self, RateOutcome};
 use crate::media::remove::{self, Removal};
 use crate::media::rotate::{self, RotateOutcome};
+use crate::media::xmp::Rating;
 use crate::repaint::Repaint;
 use crate::thumbs::store::ThumbStore;
 
 #[derive(Clone, Copy)]
 pub enum Job {
     Rotate(Orientation),
+    Rate(Rating),
     /// Removes the file. `permanently` is the user's consent to delete it for good where
     /// there is no recycle bin.
     Remove {
@@ -22,6 +25,7 @@ pub enum Job {
 
 pub enum Outcome {
     Rotated(RotateOutcome),
+    Rated(RateOutcome),
     Removed(Removal),
 }
 
@@ -83,6 +87,13 @@ fn run(entry: &ImageEntry, job: Job, store: &ThumbStore) -> std::io::Result<Outc
                 store.set_orientation(entry.id.cache_key(), orientation);
             }
             Ok(Outcome::Rotated(outcome))
+        }
+        Job::Rate(rating) => {
+            let outcome = rate::persist(path, entry.kind, rating)?;
+            if outcome == RateOutcome::Saved {
+                store.set_rating(entry.id.cache_key(), rating);
+            }
+            Ok(Outcome::Rated(outcome))
         }
         Job::Remove { permanently } => remove::remove(path, permanently).map(Outcome::Removed),
     }

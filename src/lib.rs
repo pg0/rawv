@@ -10,6 +10,7 @@ pub mod gallery;
 pub mod library;
 pub mod media;
 pub mod orientations;
+pub mod ratings;
 pub mod repaint;
 pub mod script;
 pub mod texture;

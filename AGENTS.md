@@ -16,6 +16,8 @@ python tools/make_test_photos.py <out> <raw-file> <seed-jpeg>   # builds <photo-
 target/release/rawv-cli bench <file-or-folder>                 # pipeline timings
 target/release/rawv-cli probe <file>                           # what the metadata probe finds
 target/release/rawv-cli remove <file> [--permanently]          # what the Delete key does to a file
+target/release/rawv-cli rate <file> <-1..5>                    # writes a rating like the number keys
+target/release/rawv-cli pixels <file>                          # checksum of the decoded picture
 ```
 
 A change is done when `verify.py` passes; add a check there for new behaviour. Its script
@@ -34,7 +36,7 @@ input of the person at the computer.
 | `src/gallery/` | Folder view: rolls, layout maths, selection |
 | `src/viewer/` | Single-image view, full-image loader, info line |
 | `src/config.rs` | Settings kept between sessions and where data is stored |
-| `src/filework.rs` | The one thread that changes photo files: rotate, remove |
+| `src/filework.rs` | The one thread that changes photo files: rotate, rate, remove |
 | `src/workers.rs` | `WantedPool`: workers pull from a "wanted" list the interface republishes each frame |
 | `src/command.rs` | Every action as a `Command`; key bindings and script words map to it |
 | `src/app.rs` | Owns all state, runs commands |
@@ -54,6 +56,10 @@ input of the person at the computer.
 - Photo files are changed only through `filework.rs`, in order and off the interface thread:
   - Rotation rewrites the two-byte EXIF orientation value in place and keeps the modification
     time (`media/rotate.rs`).
+  - A rating is written as XMP metadata inside the photo file, never as a separate file
+    (`media/rate.rs`, `media/xmp.rs`): in place where the file has an XMP packet, as a new
+    segment in a JPEG, as an appended packet and first directory in Sony RAW and DNG files.
+    Picture data and file times stay as they are. -1 marks a rejected picture.
   - Removal moves a file to the recycle bin. Where the volume has none (network shares), it
     deletes for good only after the user agreed (`media/remove.rs`). Whether there is a bin is
     checked up front: told to recycle on a network share, Windows deletes without saying so.
@@ -72,6 +78,10 @@ input of the person at the computer.
 - Files without an EXIF orientation value (PNG, plain JPEG) and RAW containers that are not
   TIFF-based (CR3, RAF) rotate for the session only.
 - `verify.py` leaves one small PNG per run in the Windows recycle bin.
+- Ratings cannot be stored in PNG and other bitmap files, nor in RAW files that are neither
+  Sony nor DNG and bring no XMP packet. The EXIF rating tag Windows uses (0x4746) is not
+  written. Appending to a Sony RAW file without an XMP packet has unit tests and was checked
+  by hand on a real file, but has no case in `verify.py`.
 - The thumbnail store is never pruned. A second running instance cannot open it and works
   without a thumbnail cache.
 - Developed RAW images get no lens corrections (distortion, vignetting) and, without an

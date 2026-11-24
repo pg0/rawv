@@ -274,11 +274,32 @@ impl Gallery {
         }
     }
 
-    pub fn move_selection(&mut self, direction: Direction) {
+    /// Moves the selection `steps` times in `direction`.
+    pub fn move_selection(&mut self, direction: Direction, steps: usize) {
         let lengths: Vec<usize> = self.rolls.iter().map(|roll| roll.images().len()).collect();
         let expanded: Vec<bool> = self.rolls.iter().map(|roll| roll.expanded).collect();
-        let next = next_selection(self.selection, direction, &lengths, &expanded, self.columns);
-        if let Some((roll, index)) = next {
+        let mut selection = self.selection;
+        for _ in 0..steps {
+            selection = next_selection(selection, direction, &lengths, &expanded, self.columns);
+        }
+        if let Some((roll, index)) = selection {
+            self.select(roll, index);
+        }
+    }
+
+    /// Selects the first image of the first roll, or with `last` the last image of the
+    /// last roll. Rolls without images do not count.
+    pub fn select_end(&mut self, last: bool) {
+        let with_images = |roll: &usize| !self.rolls[*roll].images().is_empty();
+        let mut rolls = 0..self.rolls.len();
+        let target = if last {
+            rolls
+                .rfind(with_images)
+                .map(|roll| (roll, self.rolls[roll].images().len() - 1))
+        } else {
+            rolls.find(with_images).map(|roll| (roll, 0))
+        };
+        if let Some((roll, index)) = target {
             self.select(roll, index);
         }
     }
