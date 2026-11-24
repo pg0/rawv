@@ -56,7 +56,11 @@ pub enum Command {
     RotateCcw,
     Rotate180,
     ToggleFullscreen,
-    /// Leaves the innermost thing: help or settings, then viewer, then fullscreen.
+    /// Removes the viewed or selected image: to the recycle bin where there is one.
+    Remove,
+    /// Agrees to deleting an image for good after `Remove` found no recycle bin.
+    ConfirmRemove,
+    /// Leaves the innermost thing: a question, help or settings, then viewer, then fullscreen.
     Escape,
     Quit,
 }
@@ -65,6 +69,18 @@ pub enum Command {
 pub enum Mode {
     Gallery,
     Viewer,
+    /// A question is open. Only its own keys work.
+    Confirm,
+}
+
+impl Mode {
+    /// Whether a binding made for `binding` (`None`: gallery and viewer) works in this mode.
+    fn takes(self, binding: Option<Mode>) -> bool {
+        match self {
+            Self::Confirm => binding == Some(Self::Confirm),
+            mode => binding.is_none_or(|bound| bound == mode),
+        }
+    }
 }
 
 struct Binding {
@@ -96,6 +112,7 @@ const NONE: Modifiers = Modifiers::NONE;
 const SHIFT: Modifiers = Modifiers::SHIFT;
 const GALLERY: Option<Mode> = Some(Mode::Gallery);
 const VIEWER: Option<Mode> = Some(Mode::Viewer);
+const CONFIRM: Option<Mode> = Some(Mode::Confirm);
 
 #[rustfmt::skip]
 const BINDINGS: &[Binding] = &[
@@ -135,6 +152,9 @@ const BINDINGS: &[Binding] = &[
     bind(NONE, Key::P, None, || Command::CycleRawMode, Some(("P", "RAW: camera preview / automatic / full size"))),
     bind(NONE, Key::F, None, || Command::ToggleFullscreen, Some(("F / F11 / Double click", "Fullscreen"))),
     bind(NONE, Key::F11, None, || Command::ToggleFullscreen, None),
+    bind(NONE, Key::Delete, None, || Command::Remove, Some(("Delete", "Move image to the recycle bin"))),
+    bind(NONE, Key::Enter, CONFIRM, || Command::ConfirmRemove, None),
+    bind(NONE, Key::Escape, CONFIRM, || Command::Escape, None),
     bind(NONE, Key::O, None, || Command::OpenFolderDialog, Some(("O", "Open folder"))),
     bind(NONE, Key::Comma, None, || Command::ToggleSettings, Some((",", "Settings"))),
     bind(NONE, Key::H, None, || Command::ToggleHelp, Some(("H / F1", "This help"))),
@@ -166,7 +186,7 @@ pub fn from_keyboard(ctx: &egui::Context, mode: Mode) -> Vec<Command> {
         ordered.sort_by_key(|binding| binding.modifiers == NONE);
         let mut commands: Vec<Command> = ordered
             .into_iter()
-            .filter(|binding| binding.mode.is_none_or(|m| m == mode))
+            .filter(|binding| mode.takes(binding.mode))
             .filter(|binding| input.consume_key(binding.modifiers, binding.key))
             .map(|binding| (binding.command)())
             .collect();
@@ -176,7 +196,7 @@ pub fn from_keyboard(ctx: &egui::Context, mode: Mode) -> Vec<Command> {
             };
             let typed_bindings = TEXT_BINDINGS
                 .iter()
-                .filter(|binding| binding.mode.is_none_or(|m| m == mode))
+                .filter(|binding| mode.takes(binding.mode))
                 .filter(|binding| binding.text == typed);
             commands.extend(typed_bindings.map(|binding| (binding.command)()));
         }
@@ -186,7 +206,7 @@ pub fn from_keyboard(ctx: &egui::Context, mode: Mode) -> Vec<Command> {
 
 /// Key and description pairs for the help overlay.
 pub fn help_lines(mode: Mode) -> Vec<(&'static str, &'static str)> {
-    let shown = |binding_mode: Option<Mode>| binding_mode.is_none_or(|m| m == mode);
+    let shown = |binding_mode: Option<Mode>| mode.takes(binding_mode);
     let keys = BINDINGS
         .iter()
         .filter(|binding| shown(binding.mode))
@@ -237,6 +257,8 @@ pub fn parse(text: &str) -> Option<Command> {
         ("rotate-ccw", None) => Command::RotateCcw,
         ("rotate-180", None) => Command::Rotate180,
         ("fullscreen", None) => Command::ToggleFullscreen,
+        ("remove", None) => Command::Remove,
+        ("confirm-remove", None) => Command::ConfirmRemove,
         ("escape", None) => Command::Escape,
         ("quit", None) => Command::Quit,
         _ => return None,

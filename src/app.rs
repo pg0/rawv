@@ -10,14 +10,15 @@ use egui::{
 
 use crate::command::{self, Command, Mode};
 use crate::config::{self, Config, WheelAction, WindowGeometry};
+use crate::filework::{Done, FileWorker, Job, Outcome};
 use crate::gallery::{Gallery, GalleryContext, layout};
 use crate::library::lister::{ListResult, Lister};
 use crate::library::listing::ImageEntry;
 use crate::media::developed::DevelopedCache;
+use crate::media::remove::Removal;
 use crate::media::rotate::RotateOutcome;
 use crate::orientations::Orientations;
 use crate::repaint::Repaint;
-use crate::rotator::Rotator;
 use crate::script::{Action, Script};
 use crate::theme;
 use crate::thumbs::service::ThumbService;
@@ -58,13 +59,15 @@ pub struct App {
     lister: Lister,
     loader: FullLoader,
     developed: DevelopedCache,
-    rotator: Rotator,
+    files: FileWorker,
     orientations: Orientations,
     gallery: Gallery,
     viewer: Option<Viewer>,
     fullscreen: bool,
     help: bool,
     settings: bool,
+    /// The image the user is asked about deleting for good.
+    confirm_remove: Option<ImageEntry>,
     toast: Option<Toast>,
     script: Option<Script>,
     timing: Option<Timing>,
@@ -88,13 +91,14 @@ impl App {
             lister: Lister::new(repaint.clone()),
             loader: FullLoader::new(repaint.clone(), developed.clone()),
             developed,
-            rotator: Rotator::new(store, repaint.clone()),
+            files: FileWorker::new(store, repaint.clone()),
             orientations: Orientations::default(),
             gallery: Gallery::new(config.sort, config.thumb_scale, config.nested),
             viewer: None,
             fullscreen: startup.fullscreen,
             help: false,
             settings: false,
+            confirm_remove: None,
             toast: None,
             script: startup.script,
             timing: startup.timing.then_some(Timing {
@@ -130,7 +134,9 @@ impl App {
     }
 
     fn mode(&self) -> Mode {
-        if self.viewer.is_some() {
+        if self.confirm_remove.is_some() {
+            Mode::Confirm
+        } else if self.viewer.is_some() {
             Mode::Viewer
         } else {
             Mode::Gallery
@@ -142,7 +148,7 @@ impl App {
             && self.thumbs.is_idle()
             && self.loader.is_idle()
             && self.developed.is_idle()
-            && self.rotator.is_idle()
+            && self.files.is_idle()
     }
 
     fn say(&mut self, text: impl Into<String>) {
@@ -226,11 +232,7 @@ impl App {
 
     /// Rotates the viewed or selected image clockwise by `quarter_turns`.
     fn rotate(&mut self, quarter_turns: u8) {
-        let entry = match &self.viewer {
-            Some(viewer) => viewer.current().cloned(),
-            None => self.gallery.selected_entry().cloned(),
-        };
-        let Some(entry) = entry else {
+        let Some(entry) = self.target_entry() else {
             self.say("Select an image to rotate");
             return;
         };
@@ -250,7 +252,68 @@ impl App {
             .effective(&entry.id.path, from_file)
             .rotated_cw(quarter_turns);
         self.orientations.set(entry.id.path.clone(), rotated);
-        self.rotator.submit(entry, rotated);
+        self.files.submit(entry, Job::Rotate(rotated));
+    }
+
+    /// The image a command about "this image" means: the viewed one, else the selected one.
+    fn target_entry(&self) -> Option<ImageEntry> {
+        match &self.viewer {
+            Some(viewer) => viewer.current().cloned(),
+            None => self.gallery.selected_entry().cloned(),
+        }
+    }
+
+    fn remove(&mut self) {
+        match self.target_entry() {
+            Some(entry) => self.files.submit(entry, Job::Remove { permanently: false }),
+            None => self.say("Select an image to delete"),
+        }
+    }
+
+    fn on_file_done(&mut self, done: Done, ctx: &egui::Context) {
+        let name = &done.entry.name;
+        match (done.job, done.result) {
+            (_, Ok(Outcome::Rotated(RotateOutcome::Saved))) => {
+                self.say("Rotated \u{b7} saved in file");
+            }
+            (_, Ok(Outcome::Rotated(RotateOutcome::ViewOnly))) => {
+                self.say("Rotated for this session \u{b7} file has no EXIF orientation");
+            }
+            (_, Ok(Outcome::Removed(Removal::NeedsConsent))) => {
+                self.confirm_remove = Some(done.entry);
+            }
+            (_, Ok(Outcome::Removed(removal))) => {
+                self.say(match removal {
+                    Removal::Recycled => format!("{name} \u{b7} moved to the recycle bin"),
+                    _ => format!("{name} \u{b7} deleted"),
+                });
+                self.forget(&done.entry, ctx);
+            }
+            (Job::Rotate(_), Err(error)) => self.say(format!("Rotation not saved: {error}")),
+            (Job::Remove { .. }, Err(error)) => self.say(format!("{name} not deleted: {error}")),
+        }
+    }
+
+    /// Takes a removed image out of the gallery and the viewer.
+    fn forget(&mut self, entry: &ImageEntry, ctx: &egui::Context) {
+        let removed = self.gallery.remove_image(&entry.id.path);
+        let Some(viewer) = &mut self.viewer else {
+            return;
+        };
+        let remaining = removed.and_then(|(roll, index)| {
+            let images = self.gallery.images_of(roll)?;
+            (viewer.roll == Some(roll) && !images.is_empty()).then_some((images, index))
+        });
+        let shows_removed = viewer
+            .current()
+            .is_some_and(|current| current.id.path == entry.id.path);
+        match remaining {
+            Some((images, index)) => viewer.after_removal(images, index),
+            None if shows_removed || removed.is_some_and(|(roll, _)| viewer.roll == Some(roll)) => {
+                self.close_viewer(ctx);
+            }
+            None => {}
+        }
     }
 
     fn run(&mut self, command: Command, ctx: &egui::Context) {
@@ -349,8 +412,16 @@ impl App {
             Command::RotateCcw => self.rotate(3),
             Command::Rotate180 => self.rotate(2),
             Command::ToggleFullscreen => self.set_fullscreen(ctx, !self.fullscreen),
+            Command::Remove => self.remove(),
+            Command::ConfirmRemove => {
+                if let Some(entry) = self.confirm_remove.take() {
+                    self.files.submit(entry, Job::Remove { permanently: true });
+                }
+            }
             Command::Escape => {
-                if self.help || self.settings {
+                if self.confirm_remove.is_some() {
+                    self.confirm_remove = None;
+                } else if self.help || self.settings {
                     self.help = false;
                     self.settings = false;
                 } else if self.viewer.is_some() {
@@ -534,6 +605,7 @@ impl App {
             "window": self.window.map(|window| (window.position, window.size, window.maximized)),
             "help": self.help,
             "settings": self.settings,
+            "confirm_remove": self.confirm_remove.as_ref().map(|entry| entry.name.clone()),
             "show_info": self.config.show_info,
             "toast": self.toast.as_ref().map(|toast| toast.text.clone()),
             "selection": self.gallery.selection,
@@ -722,6 +794,47 @@ impl App {
         commands
     }
 
+    /// Asks before deleting `entry` for good.
+    fn confirm_remove_panel(&self, ctx: &egui::Context, entry: &ImageEntry) -> Vec<Command> {
+        let mut commands = Vec::new();
+        let frame = egui::Frame::new()
+            .fill(theme::HEADER)
+            .stroke(Stroke::new(1.0, theme::BORDER))
+            .corner_radius(8.0)
+            .inner_margin(20.0);
+        let modal = egui::Modal::new(egui::Id::unique("confirm-remove"))
+            .frame(frame)
+            .backdrop_color(Color32::from_black_alpha(140))
+            .show(ctx, |ui| {
+                ui.label(
+                    RichText::new(format!("Delete {} for good?", entry.name))
+                        .font(theme::strong(13.0))
+                        .color(theme::INK),
+                );
+                ui.add_space(6.0);
+                ui.label(
+                    RichText::new(
+                        "This drive has no recycle bin. The file cannot be brought back.",
+                    )
+                    .font(theme::body(12.0))
+                    .color(theme::MUTED),
+                );
+                ui.add_space(14.0);
+                ui.horizontal(|ui| {
+                    if header_button(ui, "Delete (Enter)", theme::ACCENT, "Delete the file") {
+                        commands.push(Command::ConfirmRemove);
+                    }
+                    if header_button(ui, "Keep (Esc)", theme::INK, "Leave the file alone") {
+                        commands.push(Command::Escape);
+                    }
+                });
+            });
+        if modal.should_close() {
+            commands.push(Command::Escape);
+        }
+        commands
+    }
+
     fn paint_help(&self, ui: &Ui) {
         let lines = command::help_lines(self.mode());
         let screen = ui.ctx().content_rect();
@@ -805,14 +918,8 @@ impl eframe::App for App {
         for result in self.lister.poll() {
             self.on_listing(result);
         }
-        for done in self.rotator.poll() {
-            match done.result {
-                Ok(RotateOutcome::Saved) => self.say("Rotated \u{b7} saved in file"),
-                Ok(RotateOutcome::ViewOnly) => {
-                    self.say("Rotated for this session \u{b7} file has no EXIF orientation");
-                }
-                Err(error) => self.say(format!("Rotation not saved: {error}")),
-            }
+        for done in self.files.poll() {
+            self.on_file_done(done, &ctx);
         }
 
         let mut commands = command::from_keyboard(&ctx, self.mode());
@@ -862,6 +969,9 @@ impl eframe::App for App {
         }
         if self.settings {
             commands.extend(self.settings_panel(&ctx));
+        }
+        if let Some(entry) = &self.confirm_remove {
+            commands.extend(self.confirm_remove_panel(&ctx, entry));
         }
         self.paint_toast(ui);
 

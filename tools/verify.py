@@ -368,6 +368,45 @@ def window(session):
           str(states[2]["window"]))
 
 
+def delete(session):
+    png = session.photos / "graphic.png"
+    states = session.run(session.photos, [
+        f"click:{FIRST_FRAME}", "next", "next", "next", "next", "dump", "remove", "dump", "escape", "dump", "quit",
+    ])
+    check("delete: three state dumps", len(states) == 3, f"got {len(states)}")
+    if len(states) != 3:
+        return
+    before, after, closed = states
+    check("delete: the image to delete is shown", before["viewer"]["name"] == "graphic.png" and before["viewer"]["total"] == 15)
+    check("delete: Delete moves the file to the recycle bin",
+          not png.exists() and "recycle bin" in (after["toast"] or ""), str(after["toast"]))
+    check("delete: the viewer shows the image that followed",
+          after["viewer"]["name"] == "IMG_0001.JPG" and after["viewer"]["index"] == 4 and after["viewer"]["total"] == 14,
+          str(after["viewer"]))
+    check("delete: the gallery no longer lists the file",
+          closed["rolls"][0]["images"] == 14 and closed["selection"] == [0, 4], str(closed["selection"]))
+
+    # A network share has no recycle bin; this computer's own share stands in for one.
+    share = Path("//localhost/" + str(session.photos).replace(":", "$", 1))
+    if not share.is_dir():
+        print("        skipped: no local share to test deleting without a recycle bin")
+        return
+    raw = session.photos / "DSC00000.ARW"
+    states = session.run(share, ["right", "remove", "dump", "escape", "dump", "quit"])
+    check("delete: two state dumps on a share", len(states) == 2, f"got {len(states)}")
+    if len(states) != 2:
+        return
+    asked, kept = states
+    check("delete: without a recycle bin it asks first", asked["confirm_remove"] == "DSC00000.ARW", str(asked["confirm_remove"]))
+    check("delete: Escape keeps the file",
+          kept["confirm_remove"] is None and raw.exists() and kept["rolls"][0]["images"] == 14, str(kept["rolls"][0]))
+    states = session.run(share, ["right", "remove", "confirm-remove", "dump", "quit"])
+    deleted = states[0] if states else {"rolls": [{}], "selection": None, "toast": None}
+    check("delete: after agreeing the file is deleted",
+          not raw.exists() and deleted["rolls"][0].get("images") == 13 and deleted["selection"] == [0, 0]
+          and "deleted" in (deleted["toast"] or ""), str(deleted["toast"]))
+
+
 SESSIONS = {
     "gallery": gallery,
     "viewer": viewer,
@@ -378,6 +417,7 @@ SESSIONS = {
     "nested": nested,
     "settings": settings,
     "window": window,
+    "delete": delete,
 }
 
 

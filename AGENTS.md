@@ -8,12 +8,14 @@ edit is lossless rotation.
 ```
 cargo build --release                      # target/release/rawv.exe (window) and rawv-cli.exe (console)
 cargo test --release                       # unit tests
+cargo install --path . --locked            # puts rawv and rawv-cli on the PATH (~/.cargo/bin)
 cargo clippy --release --all-targets -- -D warnings
 cargo fmt
 python tools/verify.py <photo-tree>        # drives the real window (off screen), checks state and file bytes
 python tools/make_test_photos.py <out> <raw-file> <seed-jpeg>   # builds <photo-tree>; needs pillow, piexif
 target/release/rawv-cli bench <file-or-folder>                 # pipeline timings
 target/release/rawv-cli probe <file>                           # what the metadata probe finds
+target/release/rawv-cli remove <file> [--permanently]          # what the Delete key does to a file
 ```
 
 A change is done when `verify.py` passes; add a check there for new behaviour. Its script
@@ -32,6 +34,7 @@ input of the person at the computer.
 | `src/gallery/` | Folder view: rolls, layout maths, selection |
 | `src/viewer/` | Single-image view, full-image loader, info line |
 | `src/config.rs` | Settings kept between sessions and where data is stored |
+| `src/filework.rs` | The one thread that changes photo files: rotate, remove |
 | `src/workers.rs` | `WantedPool`: workers pull from a "wanted" list the interface republishes each frame |
 | `src/command.rs` | Every action as a `Command`; key bindings and script words map to it |
 | `src/app.rs` | Owns all state, runs commands |
@@ -48,8 +51,12 @@ input of the person at the computer.
   Do not queue work; a queue keeps doing what the user scrolled away from.
 - Folder listings, thumbnails and images are read on worker threads. The interface thread
   only stats a path when it is opened.
-- Rotation rewrites the two-byte EXIF orientation value in place and keeps the modification
-  time (`media/rotate.rs`). Nothing else may write to a photo.
+- Photo files are changed only through `filework.rs`, in order and off the interface thread:
+  - Rotation rewrites the two-byte EXIF orientation value in place and keeps the modification
+    time (`media/rotate.rs`).
+  - Removal moves a file to the recycle bin. Where the volume has none (network shares), it
+    deletes for good only after the user agreed (`media/remove.rs`). Whether there is a bin is
+    checked up front: told to recycle on a network share, Windows deletes without saying so.
 - Colours, fonts and sizes come from `theme.rs` and `gallery/layout.rs`.
 - A setting is a field of `Config` changed by one `Command`. Its key and its row in the
   settings panel (`App::settings_panel`) both send that command.
@@ -64,6 +71,7 @@ input of the person at the computer.
 - HEIC, AVIF and JPEG XL are not decoded. No colour management. Animated GIFs show the first frame.
 - Files without an EXIF orientation value (PNG, plain JPEG) and RAW containers that are not
   TIFF-based (CR3, RAF) rotate for the session only.
+- `verify.py` leaves one small PNG per run in the Windows recycle bin.
 - The thumbnail store is never pruned. A second running instance cannot open it and works
   without a thumbnail cache.
 - Developed RAW images get no lens corrections (distortion, vignetting) and, without an

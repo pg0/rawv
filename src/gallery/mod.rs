@@ -205,6 +205,32 @@ impl Gallery {
         }
     }
 
+    /// Takes the image at `path` out of its roll. Returns the roll and the index it had.
+    pub fn remove_image(&mut self, path: &Path) -> Option<(usize, usize)> {
+        let folder = path.parent()?;
+        let roll = self.rolls.iter().position(|roll| roll.path == folder)?;
+        let RollState::Ready { images, .. } = &mut self.rolls[roll].state else {
+            return None;
+        };
+        let index = images.iter().position(|image| image.id.path == path)?;
+        let mut remaining = images.to_vec();
+        remaining.remove(index);
+        let left = remaining.len();
+        *images = Arc::from(remaining);
+        if let Some((selected_roll, selected)) = self.selection
+            && selected_roll == roll
+        {
+            // The selection stays on the same image, or moves to the one that took its place.
+            let moved = if selected > index {
+                selected - 1
+            } else {
+                selected
+            };
+            self.selection = (left > 0).then(|| (roll, moved.min(left - 1)));
+        }
+        Some((roll, index))
+    }
+
     pub fn images_of(&self, roll: usize) -> Option<Arc<[ImageEntry]>> {
         match &self.rolls.get(roll)?.state {
             RollState::Ready { images, .. } => Some(Arc::clone(images)),

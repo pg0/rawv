@@ -55,6 +55,7 @@ User-facing feature, where it lives, and the script word that triggers it
 |---|---|---|
 | Fullscreen | `App::set_fullscreen` | `fullscreen`, `F`, F11, double click in viewer |
 | Rotate 90° / 180°, saved in the file | `App::rotate`, `media::rotate::persist` | `rotate-cw` `rotate-ccw` `rotate-180`, `R`, `L`, `U` |
+| Delete to the recycle bin; asks before deleting for good where there is none | `App::remove`, `media::remove` | `remove`, `confirm-remove`, Delete, Enter in the question |
 | Help | `App::paint_help` | `help`, `H`, F1 |
 | Settings panel | `App::settings_panel` | `settings`, `,`, `Settings` button |
 | Quit | `Command::Quit` | `quit`, `Q` |

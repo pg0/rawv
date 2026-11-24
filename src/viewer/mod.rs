@@ -177,6 +177,17 @@ impl Viewer {
         self.zoom_fit();
     }
 
+    /// Takes over the list after the image at `removed` was taken out of it. The image
+    /// that followed the removed one is shown next.
+    pub fn after_removal(&mut self, images: Arc<[ImageEntry]>, removed: usize) {
+        if removed < self.index {
+            self.index -= 1;
+        }
+        self.index = self.index.min(images.len().saturating_sub(1));
+        self.images = images;
+        self.zoom_fit();
+    }
+
     /// Whether `step(delta)` would leave the image list.
     pub fn at_edge(&self, delta: isize) -> bool {
         if delta < 0 {
