@@ -26,6 +26,19 @@ Set `RAWV_DATA_DIR` to keep a run's settings and caches out of the user's profil
 Run scripted windows with `--offscreen`: they then neither cover the screen nor receive the
 input of the person at the computer.
 
+## Release
+
+The version stays 0.1 (`0.1.0` in `Cargo.toml`, tag `v0.1`) whatever changes, until the owner
+asks for a new release. A release is `dist/rawv-windows-x64.zip` with both executables and the
+README, attached to the GitHub release:
+
+```
+cargo build --release && python tools/package.py      # writes dist/rawv-windows-x64.zip
+gh release upload v0.1 dist/rawv-windows-x64.zip --clobber
+```
+
+The executables link the C runtime statically (`.cargo/config.toml`) and need nothing installed.
+
 ## Layout
 
 | Folder | Holds |
