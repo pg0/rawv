@@ -58,6 +58,9 @@ pub enum Command {
     Prev,
     First,
     Last,
+    /// Moves a zoomed-in image by a step, to show more of it in that direction. Where the
+    /// image fits the window that way, Left and Right step to the previous or next image.
+    Pan(Direction),
     ZoomIn,
     ZoomOut,
     ZoomFit,
@@ -66,6 +69,8 @@ pub enum Command {
     CycleRawMode,
     /// Switches the size limit of the developed RAW cache.
     CycleRawCache,
+    /// Deletes the stored thumbnails and developed RAW images.
+    ClearCaches,
     ToggleInfo,
     /// Swaps what the wheel and Ctrl+wheel do in the viewer: zoom or step.
     ToggleWheelAction,
@@ -139,11 +144,13 @@ const CONFIRM: Option<Mode> = Some(Mode::Confirm);
 
 #[rustfmt::skip]
 const BINDINGS: &[Binding] = &[
-    bind(NONE, Key::ArrowRight, VIEWER, || Command::Next, Some(("Right / Space", "Next image"))),
-    bind(NONE, Key::Space, VIEWER, || Command::Next, None),
+    bind(NONE, Key::ArrowRight, VIEWER, || Command::Pan(Direction::Right), Some(("Arrows", "Move a zoomed-in image; else Left / Right step"))),
+    bind(NONE, Key::ArrowLeft, VIEWER, || Command::Pan(Direction::Left), None),
+    bind(NONE, Key::ArrowUp, VIEWER, || Command::Pan(Direction::Up), None),
+    bind(NONE, Key::ArrowDown, VIEWER, || Command::Pan(Direction::Down), None),
+    bind(NONE, Key::Space, VIEWER, || Command::Next, Some(("Space / Page Down", "Next image"))),
     bind(NONE, Key::PageDown, VIEWER, || Command::Next, None),
-    bind(NONE, Key::ArrowLeft, VIEWER, || Command::Prev, Some(("Left / Backspace", "Previous image"))),
-    bind(NONE, Key::Backspace, VIEWER, || Command::Prev, None),
+    bind(NONE, Key::Backspace, VIEWER, || Command::Prev, Some(("Backspace / Page Up", "Previous image"))),
     bind(NONE, Key::PageUp, VIEWER, || Command::Prev, None),
     bind(NONE, Key::Home, VIEWER, || Command::First, Some(("Home", "First image"))),
     bind(NONE, Key::End, VIEWER, || Command::Last, Some(("End", "Last image"))),
@@ -281,6 +288,10 @@ pub fn parse(text: &str) -> Option<Command> {
         ("sort", None) => Command::CycleSort,
         ("next", None) => Command::Next,
         ("prev", None) => Command::Prev,
+        ("pan-left", None) => Command::Pan(Direction::Left),
+        ("pan-right", None) => Command::Pan(Direction::Right),
+        ("pan-up", None) => Command::Pan(Direction::Up),
+        ("pan-down", None) => Command::Pan(Direction::Down),
         ("first", None) => Command::First,
         ("last", None) => Command::Last,
         ("zoom-in", None) => Command::ZoomIn,
@@ -289,6 +300,7 @@ pub fn parse(text: &str) -> Option<Command> {
         ("zoom-actual", None) => Command::ZoomActual,
         ("raw-mode", None) => Command::CycleRawMode,
         ("raw-cache", None) => Command::CycleRawCache,
+        ("clear-caches", None) => Command::ClearCaches,
         ("info", None) => Command::ToggleInfo,
         ("wheel-action", None) => Command::ToggleWheelAction,
         ("help", None) => Command::ToggleHelp,

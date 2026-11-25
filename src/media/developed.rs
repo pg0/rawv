@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::time::SystemTime;
 
@@ -38,6 +38,8 @@ struct Inner {
     messages: SyncSender<Message>,
     /// Images handed over but not yet written.
     unwritten: Arc<AtomicUsize>,
+    /// Set by `clear` until the writer has deleted the files.
+    clearing: Arc<AtomicBool>,
 }
 
 #[derive(Clone)]
@@ -54,11 +56,13 @@ impl DevelopedCache {
         }
         let (messages, inbox) = mpsc::sync_channel(PENDING_WRITES);
         let unwritten = Arc::new(AtomicUsize::new(0));
+        let clearing = Arc::new(AtomicBool::new(false));
         let inner = Arc::new(Inner {
             dir: dir.to_path_buf(),
             budget: AtomicU64::new(budget),
             messages,
             unwritten: Arc::clone(&unwritten),
+            clearing: Arc::clone(&clearing),
         });
         let writer = Arc::downgrade(&inner);
         let dir = dir.to_path_buf();
@@ -68,7 +72,7 @@ impl DevelopedCache {
                     .upgrade()
                     .map(|inner| inner.budget.load(Ordering::Relaxed))
             };
-            write_loop(&dir, &inbox, &unwritten, budget);
+            write_loop(&dir, &inbox, &unwritten, &clearing, budget);
         });
         Self { inner: Some(inner) }
     }
@@ -82,6 +86,15 @@ impl DevelopedCache {
         if let Some(inner) = &self.inner {
             inner.budget.store(budget, Ordering::Relaxed);
             // A full inbox means writes are pending; each of them prunes as well.
+            let _ = inner.messages.try_send(Message::Prune);
+        }
+    }
+
+    /// Deletes every stored image in the background.
+    pub fn clear(&self) {
+        if let Some(inner) = &self.inner {
+            inner.clearing.store(true, Ordering::Relaxed);
+            // A full inbox means writes are pending; the writer sees the request at the next.
             let _ = inner.messages.try_send(Message::Prune);
         }
     }
@@ -127,9 +140,9 @@ impl DevelopedCache {
 
     /// True when every image handed over has been written.
     pub fn is_idle(&self) -> bool {
-        self.inner
-            .as_ref()
-            .is_none_or(|inner| inner.unwritten.load(Ordering::Relaxed) == 0)
+        self.inner.as_ref().is_none_or(|inner| {
+            inner.unwritten.load(Ordering::Relaxed) == 0 && !inner.clearing.load(Ordering::Relaxed)
+        })
     }
 
     #[cfg(test)]
@@ -148,6 +161,7 @@ fn write_loop(
     dir: &Path,
     inbox: &Receiver<Message>,
     unwritten: &AtomicUsize,
+    clearing: &AtomicBool,
     budget: impl Fn() -> Option<u64>,
 ) {
     let Some(limit) = budget() else { return };
@@ -168,7 +182,10 @@ fn write_loop(
                 let _ = done.send(());
             }
         }
-        if total > limit {
+        if clearing.load(Ordering::Relaxed) {
+            total = prune(dir, 0);
+            clearing.store(false, Ordering::Relaxed);
+        } else if total > limit {
             total = prune(dir, limit);
         }
     }
@@ -306,6 +323,26 @@ mod tests {
         cache.put("b", &image(32, 32));
         cache.wait_until_written();
         assert_eq!(std::fs::read_dir(&dir).expect("dir").count(), 0);
+        std::fs::remove_dir_all(&dir).expect("cleanup");
+    }
+
+    #[test]
+    fn clearing_deletes_every_image_and_keeps_storing() {
+        let dir = temp_dir("clear");
+        let cache = DevelopedCache::open(&dir, 1 << 30);
+        cache.put("a", &image(32, 32));
+        cache.put("b", &image(32, 32));
+        cache.wait_until_written();
+
+        cache.clear();
+        assert!(!cache.is_idle());
+        cache.wait_until_written();
+        assert!(cache.is_idle());
+        assert!(cache.get("a").is_none() && cache.get("b").is_none());
+        assert_eq!(std::fs::read_dir(&dir).expect("dir").count(), 0);
+        cache.put("c", &image(32, 32));
+        cache.wait_until_written();
+        assert!(cache.get("c").is_some());
         std::fs::remove_dir_all(&dir).expect("cleanup");
     }
 

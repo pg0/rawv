@@ -2,9 +2,11 @@
 
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Sender};
 
-use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
+use parking_lot::RwLock;
+use redb::{CompactionMode, Database, ReadableDatabase, ReadableTable, TableDefinition};
 
 use crate::media::orientation::Orientation;
 use crate::media::thumb::{ContentRect, Thumb, ThumbQuality};
@@ -76,13 +78,18 @@ enum Write {
         key: String,
         rating: Rating,
     },
+    /// Deletes every thumbnail and gives the space back to the disk.
+    Clear,
 }
 
 /// Reads happen on the calling thread; writes are batched on a background thread.
 #[derive(Clone)]
 pub struct ThumbStore {
-    database: Option<Arc<Database>>,
+    /// Shared for reads and writes; taken alone only to shrink the file.
+    database: Option<Arc<RwLock<Database>>>,
     writes: Option<Sender<Write>>,
+    /// Set from a `clear` until the writer has finished it.
+    clearing: Arc<AtomicBool>,
 }
 
 impl ThumbStore {
@@ -95,20 +102,32 @@ impl ThumbStore {
         let Ok(database) = Database::create(path) else {
             return Self::disabled();
         };
-        let database = Arc::new(database);
+        let database = Arc::new(RwLock::new(database));
         let (tx, rx) = mpsc::channel::<Write>();
         let writer_db = Arc::clone(&database);
+        let clearing = Arc::new(AtomicBool::new(false));
+        let cleared = Arc::clone(&clearing);
         std::thread::spawn(move || {
-            let _ = delete_old_table(&writer_db);
+            let _ = delete_old_table(&writer_db.read());
             while let Ok(first) = rx.recv() {
                 let mut batch = vec![first];
                 batch.extend(rx.try_iter().take(MAX_BATCH - 1));
-                let _ = write_batch(&writer_db, batch);
+                let clear = batch.iter().any(|write| matches!(write, Write::Clear));
+                if let Err(error) = write_batch(&writer_db.read(), batch) {
+                    eprintln!("thumbnail store: {error}");
+                }
+                if clear {
+                    if let Err(error) = writer_db.write().compact(CompactionMode::Balanced) {
+                        eprintln!("thumbnail store: cannot shrink the file: {error}");
+                    }
+                    cleared.store(false, Ordering::Relaxed);
+                }
             }
         });
         Self {
             database: Some(database),
             writes: Some(tx),
+            clearing,
         }
     }
 
@@ -116,11 +135,25 @@ impl ThumbStore {
         Self {
             database: None,
             writes: None,
+            clearing: Arc::new(AtomicBool::new(false)),
         }
     }
 
+    /// Deletes every stored thumbnail in the background.
+    pub fn clear(&self) {
+        if self.writes.is_some() {
+            self.clearing.store(true, Ordering::Relaxed);
+            self.send(Write::Clear);
+        }
+    }
+
+    /// False while a `clear` is still running.
+    pub fn is_idle(&self) -> bool {
+        !self.clearing.load(Ordering::Relaxed)
+    }
+
     pub fn get(&self, key: &str) -> Option<StoredThumb> {
-        let database = self.database.as_ref()?;
+        let database = self.database.as_ref()?.read();
         let table = database.begin_read().ok()?.open_table(TABLE).ok()?;
         let value = table.get(key).ok()??;
         StoredThumb::decode(value.value())
@@ -170,6 +203,7 @@ fn write_batch(database: &Database, batch: Vec<Write>) -> Result<(), redb::Error
                 Write::SetRating { key, rating } => {
                     set_header_byte(&mut table, &key, RATING_AT, rating.cast_unsigned())?;
                 }
+                Write::Clear => table.retain(|_, _| false)?,
             }
         }
     }
@@ -262,6 +296,36 @@ mod tests {
         let stored = wait_until(&store, "a|1|2", |s| s.orientation.to_exif() == 3);
         assert_eq!(stored.jpeg, vec![0xFF, 0xD8, 1, 2, 3]);
 
+        drop(store);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn clearing_deletes_every_thumbnail_and_shrinks_the_file() {
+        let path =
+            std::env::temp_dir().join(format!("rawv-test-store-clear-{}.redb", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let store = ThumbStore::open(&path);
+        let mut thumb = sample_thumb();
+        thumb.jpeg = vec![0x55; 200_000];
+        for index in 0..40 {
+            store.put(format!("photo-{index}"), &thumb);
+        }
+        wait_until(&store, "photo-39", |_| true);
+        let full = std::fs::metadata(&path).expect("file").len();
+
+        store.clear();
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while !store.is_idle() {
+            assert!(Instant::now() < deadline, "clearing did not finish");
+            std::thread::yield_now();
+        }
+        assert!(store.get("photo-0").is_none() && store.get("photo-39").is_none());
+        let cleared = std::fs::metadata(&path).expect("file").len();
+        assert!(cleared < full / 4, "file still {cleared} of {full} bytes");
+
+        store.put("after".to_owned(), &sample_thumb());
+        wait_until(&store, "after", |_| true);
         drop(store);
         let _ = std::fs::remove_file(&path);
     }

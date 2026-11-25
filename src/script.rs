@@ -5,6 +5,7 @@
 //! `shot:FILE.png`, and pointer input in window points: `click:X,Y`, `double-click:X,Y`,
 //! `middle-click:X,Y`, `right-click:X,Y`, `move:X,Y`, `drag:X1,Y1,X2,Y2`, `wheel:LINES`, `ctrl-wheel:LINES`.
 //! `drop:PATH` drops a file or folder onto the window. `type:TEXT` types text.
+//! `key:NAME` presses and releases a key, named as egui names it (`ArrowRight`, `PageDown`).
 //! `dump:FILE` appends the app state as one JSON line, for assertions. `pause:MS` lets
 //! time pass, as a person would between two separate double clicks.
 
@@ -163,6 +164,14 @@ fn parse_step(word: &str) -> Result<Step, String> {
             _ => return Err(format!("expected MS in: {word}")),
         },
         "type" => Step::Input(vec![vec![Event::Text(argument.trim().to_owned())]]),
+        "key" => {
+            let key = egui::Key::from_name(argument.trim())
+                .ok_or_else(|| format!("unknown key in: {word}"))?;
+            Step::Input(vec![
+                vec![key_event(key, true)],
+                vec![key_event(key, false)],
+            ])
+        }
         "move" => Step::Input(vec![vec![Event::PointerMoved(point()?)]]),
         "click" => Step::Input(click(point()?, PointerButton::Primary)),
         "middle-click" => Step::Input(click(point()?, PointerButton::Middle)),
@@ -221,6 +230,16 @@ impl egui::DroppedFile for ScriptedDrop {
 
     fn bytes(&self) -> Result<Vec<u8>, String> {
         std::fs::read(&self.0).map_err(|error| error.to_string())
+    }
+}
+
+fn key_event(key: egui::Key, pressed: bool) -> Event {
+    Event::Key {
+        key,
+        physical_key: None,
+        pressed,
+        repeat: false,
+        modifiers: Modifiers::NONE,
     }
 }
 

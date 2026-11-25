@@ -9,7 +9,6 @@
 
 use std::path::PathBuf;
 use std::process::ExitCode;
-use std::sync::Arc;
 use std::time::Instant;
 
 use rawv::app::{App, Startup};
@@ -33,9 +32,11 @@ fn main() -> ExitCode {
         .with_title("rawv")
         .with_app_id("rawv")
         .with_min_inner_size([480.0, 320.0])
-        .with_icon(Arc::new(icon()))
         .with_fullscreen(app.starts_fullscreen())
         .with_drag_and_drop(true);
+    if let Some(icon) = rawv::theme::window_icon() {
+        viewport = viewport.with_icon(icon);
+    }
     viewport = match app.window_geometry() {
         Some(geometry) => {
             let sized = viewport
@@ -100,32 +101,4 @@ fn parse_arguments(process_start: Instant) -> Result<(Startup, bool), String> {
         }
     }
     Ok((startup, offscreen))
-}
-
-/// The window icon: a piece of film with an accent-coloured picture between its perforations.
-fn icon() -> egui::IconData {
-    const SIZE: usize = 64;
-    let mut rgba = vec![0u8; SIZE * SIZE * 4];
-    for y in 0..SIZE {
-        for x in 0..SIZE {
-            let on_film = (2..62).contains(&x) && (6..58).contains(&y);
-            let in_picture = (8..56).contains(&x) && (20..44).contains(&y);
-            // Square holes along both edges of the film.
-            let hole_row = (9..16).contains(&y) || (48..55).contains(&y);
-            let hole = hole_row && (5..59).contains(&x) && (x - 5) % 9 < 5;
-            let color = if !on_film || hole {
-                [0, 0, 0, 0]
-            } else if in_picture {
-                [0xe2, 0xb7, 0x3a, 0xff]
-            } else {
-                [0x1c, 0x1c, 0x1c, 0xff]
-            };
-            rgba[(y * SIZE + x) * 4..(y * SIZE + x) * 4 + 4].copy_from_slice(&color);
-        }
-    }
-    egui::IconData {
-        rgba,
-        width: SIZE as u32,
-        height: SIZE as u32,
-    }
 }

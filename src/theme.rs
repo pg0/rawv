@@ -115,3 +115,30 @@ fn fonts() -> FontDefinitions {
     }
     fonts
 }
+
+/// The icon file `build.rs` also puts into the executables; made by `tools/make_icon.py`.
+const ICON: &[u8] = include_bytes!("../assets/rawv.ico");
+
+/// The window icon, the largest picture in the icon file.
+pub fn window_icon() -> Option<egui::IconData> {
+    let picture = image::load_from_memory_with_format(ICON, image::ImageFormat::Ico)
+        .ok()?
+        .into_rgba8();
+    Some(egui::IconData {
+        width: picture.width(),
+        height: picture.height(),
+        rgba: picture.into_raw(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn window_icon_decodes_from_the_icon_file() {
+        let icon = window_icon().expect("icon decodes");
+        assert_eq!((icon.width, icon.height), (256, 256));
+        assert_eq!(icon.rgba.len(), 256 * 256 * 4);
+    }
+}

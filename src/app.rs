@@ -8,7 +8,7 @@ use egui::{
     Align, Align2, Color32, Layout, Rect, RichText, Sense, Stroke, Ui, ViewportCommand, vec2,
 };
 
-use crate::command::{self, Command, Mode};
+use crate::command::{self, Command, Direction, Mode};
 use crate::config::{self, Config, WheelAction, WindowGeometry};
 use crate::filework::{Done, FileWorker, Job, Outcome};
 use crate::gallery::{Gallery, GalleryContext, layout};
@@ -171,6 +171,7 @@ impl App {
             && self.thumbs.is_idle()
             && self.loader.is_idle()
             && self.developed.is_idle()
+            && self.thumb_store.is_idle()
             && self.files.is_idle()
     }
 
@@ -514,6 +515,18 @@ impl App {
             Command::Prev => self.step_viewer(-1),
             Command::First => self.with_viewer(|viewer| viewer.go_to(0)),
             Command::Last => self.with_viewer(|viewer| viewer.go_to(usize::MAX)),
+            Command::Pan(direction) => {
+                let moved = self
+                    .viewer
+                    .as_mut()
+                    .is_some_and(|viewer| viewer.pan_step(direction));
+                match direction {
+                    _ if moved => {}
+                    Direction::Left => self.step_viewer(-1),
+                    Direction::Right => self.step_viewer(1),
+                    Direction::Up | Direction::Down => {}
+                }
+            }
             Command::ZoomIn => self.with_viewer(|viewer| viewer.zoom_step(true)),
             Command::ZoomOut => self.with_viewer(|viewer| viewer.zoom_step(false)),
             Command::ZoomFit => self.with_viewer(Viewer::zoom_fit),
@@ -528,6 +541,11 @@ impl App {
                 let size = config::next_raw_cache_size(self.config.raw_cache_gb);
                 self.config.raw_cache_gb = size;
                 self.developed.set_budget(config::raw_cache_bytes(size));
+            }
+            Command::ClearCaches => {
+                self.thumb_store.clear();
+                self.developed.clear();
+                self.say("Thumbnail and RAW caches cleared");
             }
             Command::ToggleInfo => self.config.show_info = !self.config.show_info,
             Command::ToggleWheelAction => {
@@ -858,6 +876,12 @@ impl App {
                 raw_cache.as_str(),
                 "",
                 Command::CycleRawCache,
+            ),
+            (
+                "Thumbnail and RAW caches",
+                "Clear",
+                "",
+                Command::ClearCaches,
             ),
             (
                 "Info line in viewer",

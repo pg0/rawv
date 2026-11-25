@@ -14,8 +14,13 @@ fn main() -> ExitCode {
         [command, path, flag] if command == "remove" && flag == "--permanently" => {
             remove(Path::new(path), true)
         }
+        [command] if command == "register" => register(None),
+        [command, viewer] if command == "register" => register(Some(Path::new(viewer))),
+        [command] if command == "unregister" => {
+            rawv::default_app::unregister().map_err(|e| e.to_string())
+        }
         _ => Err(
-            "usage: rawv-cli probe <file> | bench <file-or-folder> | pixels <file> | rate <file> <-1..5> | remove <file> [--permanently]"
+            "usage: rawv-cli probe <file> | bench <file-or-folder> | pixels <file> | rate <file> <-1..5> | remove <file> [--permanently] | register [<rawv.exe>] | unregister"
                 .to_owned(),
         ),
     };
@@ -26,6 +31,30 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// Registers the viewer for its file types, by default the `rawv.exe` next to this program,
+/// and opens the Settings page where the user makes it the default.
+fn register(viewer: Option<&Path>) -> Result<(), String> {
+    let viewer = match viewer {
+        Some(viewer) => std::path::absolute(viewer).map_err(|e| e.to_string())?,
+        None => std::env::current_exe()
+            .map_err(|e| e.to_string())?
+            .with_file_name("rawv.exe"),
+    };
+    let registration = rawv::default_app::register(&viewer).map_err(|e| e.to_string())?;
+    println!(
+        "registered {} for {} file types",
+        viewer.display(),
+        registration.extensions
+    );
+    if registration.real {
+        println!(
+            "to make rawv the default: Settings > Apps > Default apps > rawv, pick it per file type"
+        );
+        rawv::default_app::open_settings().map_err(|e| format!("cannot open Settings: {e}"))?;
+    }
+    Ok(())
 }
 
 /// Removes a file the way the Delete key does and prints what happened.

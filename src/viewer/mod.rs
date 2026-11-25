@@ -8,7 +8,7 @@ use std::sync::Arc;
 use egui::text::{LayoutJob, TextFormat, TextWrapping};
 use egui::{Color32, Event, MouseWheelUnit, Pos2, Rect, Sense, Stroke, TextureId, Ui, Vec2, vec2};
 
-use crate::command::Command;
+use crate::command::{Command, Direction};
 use crate::config::WheelAction;
 use crate::draw;
 use crate::library::listing::ImageEntry;
@@ -27,6 +27,8 @@ const MAX_ZOOM: f32 = 16.0;
 const MIN_ZOOM: f32 = 0.02;
 const ZOOM_STEP: f32 = 1.25;
 const EDGE_ZONE: f32 = 96.0;
+/// How far an arrow key moves a zoomed-in image, as a share of the view.
+const PAN_STEP: f32 = 0.15;
 const INFO_HEIGHT: f32 = 56.0;
 /// Radius of the stars that show the rating.
 const RATING_STAR: f32 = 6.0;
@@ -48,6 +50,10 @@ pub struct Viewer {
     pub awaits_folder: bool,
     zoom: Zoom,
     pan: Vec2,
+    /// How far the image reaches past the view on each side, as of the last frame.
+    slack: Vec2,
+    /// Size of the view in the last frame.
+    view: Vec2,
     direction: isize,
     wheel: f32,
     /// Zoom factor used in the last frame, the base for relative zoom commands.
@@ -91,6 +97,8 @@ impl Viewer {
             awaits_folder: false,
             zoom: Zoom::Fit,
             pan: Vec2::ZERO,
+            slack: Vec2::ZERO,
+            view: Vec2::ZERO,
             direction: 1,
             wheel: 0.0,
             shown_factor: 1.0,
@@ -234,6 +242,23 @@ impl Viewer {
         self.zoom_to(self.shown_factor * factor, Vec2::ZERO);
     }
 
+    /// Moves the image to show more of it towards `direction`. False where the image fits
+    /// the view along that axis, so there is nothing to move.
+    pub fn pan_step(&mut self, direction: Direction) -> bool {
+        let (axis, sign) = match direction {
+            Direction::Left => (0, 1.0),
+            Direction::Right => (0, -1.0),
+            Direction::Up => (1, 1.0),
+            Direction::Down => (1, -1.0),
+        };
+        if self.slack[axis] <= 0.0 {
+            return false;
+        }
+        let moved = self.pan[axis] + sign * self.view[axis] * PAN_STEP;
+        self.pan[axis] = moved.clamp(-self.slack[axis], self.slack[axis]);
+        true
+    }
+
     pub fn zoom_fit(&mut self) {
         self.zoom = Zoom::Fit;
         self.pan = Vec2::ZERO;
@@ -313,8 +338,9 @@ impl Viewer {
             if response.dragged() {
                 self.pan += response.drag_delta();
             }
-            let slack = ((size - rect.size()) / 2.0).max(Vec2::ZERO);
-            self.pan = self.pan.clamp(-slack, slack);
+            self.slack = ((size - rect.size()) / 2.0).max(Vec2::ZERO);
+            self.view = rect.size();
+            self.pan = self.pan.clamp(-self.slack, self.slack);
             let target = Rect::from_center_size(rect.center() + self.pan, size);
             draw::image(
                 &painter,

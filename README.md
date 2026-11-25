@@ -18,6 +18,21 @@ NEF, RAF, RW2, ORF and more).
 Download `rawv-windows-x64.zip` from the releases, unpack it anywhere, run `rawv.exe`.
 Put the folder on the `PATH` to start it from a terminal.
 
+### Make rawv the default viewer
+
+Open a terminal in the unpacked folder and run:
+
+```
+rawv-cli register
+```
+
+This registers `rawv.exe` for JPEG, PNG, WebP, GIF, BMP, TIFF and the RAW formats, for your
+user only (no admin rights), and opens **Settings > Apps > Default apps > rawv**. Windows lets
+only you change the default: pick rawv there for each file type, or right-click a photo,
+**Open with > rawv > Always**.
+
+Moved the folder? Run `rawv-cli register` again. `rawv-cli unregister` removes the entries.
+
 ```
 rawv                    reopen the last folder
 rawv C:\photos          open a folder
@@ -29,7 +44,8 @@ rawv --fullscreen ...
 
 | Key | Does |
 |---|---|
-| Arrows, Space, Ctrl+Wheel | next / previous image |
+| Space, Page Up / Down, Ctrl+Wheel | next / previous image |
+| Arrows | move a zoomed-in image; when it fits, Left / Right step |
 | Wheel, `+` `-` | zoom (`W` swaps wheel and Ctrl+wheel) |
 | `*` / `/` | fit to window / 100 % |
 | `F`, double click | fullscreen |
@@ -44,6 +60,7 @@ rawv --fullscreen ...
 ## Good to know
 
 - Settings live in `%APPDATA%\rawv`, the thumbnail and RAW caches in `%LOCALAPPDATA%\rawv`.
+  **Settings > Thumbnail and RAW caches > Clear** empties both.
 - Ratings are XMP metadata written into the photo file itself; no sidecar files. A Sony RAW
   file without a rating field grows by about 3 KB the first time it is rated.
 - A network share has no recycle bin: there, Delete asks first and then deletes for good.

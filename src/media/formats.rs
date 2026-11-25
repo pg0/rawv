@@ -10,12 +10,23 @@ pub enum Kind {
     Bitmap,
 }
 
+const JPEG_EXTENSIONS: &[&str] = &["jpg", "jpeg", "jpe", "jfif"];
+
 const RAW_EXTENSIONS: &[&str] = &[
     "arw", "cr2", "cr3", "nef", "nrw", "raf", "rw2", "orf", "dng", "pef", "srw", "sr2", "srf",
     "x3f", "3fr", "kdc", "dcr", "mrw", "erf", "mef", "mos", "iiq", "crw",
 ];
 
 const BITMAP_EXTENSIONS: &[&str] = &["png", "webp", "gif", "bmp", "tif", "tiff"];
+
+/// Every file extension rawv shows, in lower case and without the dot.
+pub fn extensions() -> impl Iterator<Item = &'static str> {
+    JPEG_EXTENSIONS
+        .iter()
+        .chain(RAW_EXTENSIONS)
+        .chain(BITMAP_EXTENSIONS)
+        .copied()
+}
 
 /// Whether `head`, the first bytes of a file, begins a JPEG. Files named `.jpg` sometimes
 /// hold a PNG or WebP; those are decoded like the other bitmap formats.
@@ -26,7 +37,7 @@ pub fn is_jpeg(head: &[u8]) -> bool {
 pub fn kind_of(path: &Path) -> Option<Kind> {
     let ext = path.extension()?.to_str()?.to_ascii_lowercase();
     match ext.as_str() {
-        "jpg" | "jpeg" | "jpe" | "jfif" => Some(Kind::Jpeg),
+        e if JPEG_EXTENSIONS.contains(&e) => Some(Kind::Jpeg),
         e if RAW_EXTENSIONS.contains(&e) => Some(Kind::Raw),
         e if BITMAP_EXTENSIONS.contains(&e) => Some(Kind::Bitmap),
         _ => None,

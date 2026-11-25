@@ -13,11 +13,13 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import winreg
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 RAWV = REPO / "target" / "release" / "rawv.exe"
 CLI = REPO / "target" / "release" / "rawv-cli.exe"
+ICON = REPO / "assets" / "rawv.ico"
 
 # Window points for a fresh 1500x950 window at thumbnail scale 1.
 FIRST_FRAME = "246,115"
@@ -26,6 +28,7 @@ SECOND_ROLL_TITLE = "60,299"
 CENTER = "750,475"
 NEXT_BUTTON = "1465,475"
 CLOSE_BUTTON = "1469,31"
+CLEAR_CACHES_BUTTON = "803,460"
 
 failures = []
 
@@ -483,6 +486,147 @@ def rating(session):
           and png.read_bytes() == before, str(states and states[0]["toast"]))
 
 
+def keyboard(session):
+    states = session.run(session.photos, [
+        f"click:{FIRST_FRAME}", "next", "next", "next", "next", "next", "zoom-actual", "dump",
+        "key:ArrowRight", "dump", "key:ArrowDown", "dump", "key:ArrowLeft", "key:ArrowLeft", "dump",
+        *["key:ArrowRight"] * 20, "dump",
+        "zoom-fit", "key:ArrowRight", "dump", "key:ArrowLeft", "dump", "key:ArrowDown", "dump",
+        "key:PageDown", "dump", "key:PageUp", "dump", "key:Space", "dump",
+        "quit",
+    ])
+    check("keyboard: all state dumps arrive", len(states) == 11, f"got {len(states)}")
+    if len(states) != 11:
+        return
+    actual, right, down, left, edge, fit_right, fit_left, fit_down, page_down, page_up, space = states
+    view = actual["viewer"]
+    check("keyboard: a 24 MP JPEG at 100 %", view["name"] == "IMG_0001.JPG" and abs(view["zoom_percent"] - 100) < 0.01, str(view))
+    start = view["pan"]
+    moved = right["viewer"]["pan"]
+    check("keyboard: Right moves a zoomed-in image to show more on the right",
+          moved[0] < start[0] - 50 and moved[1] == start[1] and right["viewer"]["index"] == 5, f"{start} -> {moved}")
+    check("keyboard: Down shows more below", down["viewer"]["pan"][1] < moved[1] - 50, str(down["viewer"]["pan"]))
+    check("keyboard: Left moves back", left["viewer"]["pan"][0] > down["viewer"]["pan"][0] + 50, str(left["viewer"]["pan"]))
+    check("keyboard: at the right edge Right stays on the image",
+          edge["viewer"]["index"] == 5 and edge["viewer"]["pan"][0] < left["viewer"]["pan"][0] - 500, str(edge["viewer"]))
+    check("keyboard: fitted, Right steps to the next image", fit_right["viewer"]["index"] == 6, str(fit_right["viewer"]["index"]))
+    check("keyboard: fitted, Left steps back", fit_left["viewer"]["index"] == 5, str(fit_left["viewer"]["index"]))
+    check("keyboard: fitted, Down does nothing",
+          fit_down["viewer"]["index"] == 5 and fit_down["viewer"]["pan"] == [0, 0], str(fit_down["viewer"]))
+    check("keyboard: Page Down, Page Up and Space step",
+          page_down["viewer"]["index"] == 6 and page_up["viewer"]["index"] == 5 and space["viewer"]["index"] == 6,
+          f'{page_down["viewer"]["index"]} {page_up["viewer"]["index"]} {space["viewer"]["index"]}')
+
+
+def caches(session):
+    thumbs = session.data / "thumbs.redb"
+    developed = session.data / "developed"
+    session.run(session.photos, [f"click:{FIRST_FRAME}", "raw-mode", "escape", "quit"])
+    filled = thumbs.stat().st_size if thumbs.exists() else 0
+    developed_before = len(list(developed.glob("*.developed")))
+    check("caches: viewing fills both caches", filled > 500_000 and developed_before > 0,
+          f"thumbs {filled} bytes, {developed_before} developed")
+    states = session.run(session.photos / "empty", ["settings", f"click:{CLEAR_CACHES_BUTTON}", "dump", "quit"])
+    check("caches: one state dump", len(states) == 1, f"got {len(states)}")
+    if len(states) != 1:
+        return
+    cleared = thumbs.stat().st_size
+    check("caches: Clear in the settings empties the thumbnail store", cleared < filled / 2, f"{filled} -> {cleared} bytes")
+    check("caches: Clear deletes the developed RAW images",
+          not list(developed.glob("*.developed")), str(list(developed.iterdir())[:3]))
+    check("caches: a message says so", "cleared" in (states[0]["toast"] or ""), str(states[0]["toast"]))
+
+
+def registry_key(root, key):
+    return winreg.OpenKey(winreg.HKEY_CURRENT_USER, root + "\\" + key if key else root)
+
+
+def registry_value(root, key, name=""):
+    try:
+        with registry_key(root, key) as opened:
+            return winreg.QueryValueEx(opened, name)[0]
+    except OSError:
+        return None
+
+
+def registry_names(root, key):
+    try:
+        with registry_key(root, key) as opened:
+            return {winreg.EnumValue(opened, i)[0] for i in range(winreg.QueryInfoKey(opened)[1])}
+    except OSError:
+        return set()
+
+
+def registry_keys_with_values(root, key=""):
+    """Every key below `key` that still holds a value."""
+    try:
+        with registry_key(root, key) as opened:
+            subkeys, values, _ = winreg.QueryInfoKey(opened)
+            children = [winreg.EnumKey(opened, i) for i in range(subkeys)]
+    except OSError:
+        return []
+    found = [key] if values else []
+    for child in children:
+        found += registry_keys_with_values(root, key + "\\" + child if key else child)
+    return found
+
+
+def delete_registry_tree(root, key=""):
+    try:
+        with registry_key(root, key) as opened:
+            children = [winreg.EnumKey(opened, i) for i in range(winreg.QueryInfoKey(opened)[0])]
+    except OSError:
+        return
+    for child in children:
+        delete_registry_tree(root, key + "\\" + child if key else child)
+    winreg.DeleteKey(winreg.HKEY_CURRENT_USER, root + "\\" + key if key else root)
+
+
+def register(session):
+    # Everything goes below a throwaway key instead of the user's real file type settings.
+    root = rf"Software\rawv-verify-{os.getpid()}"
+    env = dict(os.environ, RAWV_REGISTRY_ROOT=root)
+    try:
+        result = subprocess.run([str(CLI), "register", str(RAWV)], env=env, capture_output=True, text=True, timeout=60)
+        check("register: succeeds", result.returncode == 0, result.stderr.strip())
+        command = registry_value(root, r"Software\Classes\rawv.image\shell\open\command")
+        check("register: opening a photo runs rawv with its path", command == f'"{RAWV}" "%1"', str(command))
+        check("register: the file type icon comes from rawv.exe",
+              registry_value(root, r"Software\Classes\rawv.image\DefaultIcon") == f'"{RAWV}",0')
+        check("register: listed among the programs Settings offers",
+              registry_value(root, r"Software\RegisteredApplications", "rawv") == r"Software\rawv\Capabilities")
+        associations = registry_names(root, r"Software\rawv\Capabilities\FileAssociations")
+        check("register: offered for JPEG, PNG and RAW files",
+              {".jpg", ".jpeg", ".png", ".arw", ".cr2", ".dng", ".nef"} <= associations and len(associations) >= 30,
+              str(sorted(associations)))
+        check("register: in Open with for .cr2",
+              "rawv.image" in registry_names(root, r"Software\Classes\.cr2\OpenWithProgids"))
+
+        result = subprocess.run([str(CLI), "unregister"], env=env, capture_output=True, text=True, timeout=60)
+        check("unregister: succeeds", result.returncode == 0, result.stderr.strip())
+        leftovers = registry_keys_with_values(root)
+        check("unregister: no value of rawv is left", not leftovers, str(leftovers[:5]))
+    finally:
+        delete_registry_tree(root)
+
+    # The icon Explorer shows for rawv.exe is the one in assets/rawv.ico.
+    shown = session.work / "exe-icon.png"
+    subprocess.run(["powershell.exe", "-NoProfile", "-Command",
+                    "Add-Type -AssemblyName System.Drawing; "
+                    f"[System.Drawing.Icon]::ExtractAssociatedIcon('{RAWV}').ToBitmap().Save('{shown}')"],
+                   capture_output=True, timeout=60)
+    try:
+        from PIL import Image, ImageChops
+        expected = Image.open(ICON)
+        expected.size = (32, 32)
+        expected = expected.convert("RGBA")
+        actual = Image.open(shown).convert("RGBA")
+        difference = max(high for _, high in ImageChops.difference(expected, actual).getextrema())
+        check("icon: rawv.exe carries the rawv icon", difference <= 8, f"largest difference {difference}")
+    except (ImportError, OSError) as error:
+        check("icon: rawv.exe carries the rawv icon", False, str(error))
+
+
 SESSIONS = {
     "gallery": gallery,
     "viewer": viewer,
@@ -495,6 +639,9 @@ SESSIONS = {
     "window": window,
     "delete": delete,
     "rating": rating,
+    "keyboard": keyboard,
+    "caches": caches,
+    "register": register,
 }
 
 

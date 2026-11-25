@@ -18,11 +18,14 @@ target/release/rawv-cli probe <file>                           # what the metada
 target/release/rawv-cli remove <file> [--permanently]          # what the Delete key does to a file
 target/release/rawv-cli rate <file> <-1..5>                    # writes a rating like the number keys
 target/release/rawv-cli pixels <file>                          # checksum of the decoded picture
+target/release/rawv-cli register [<rawv.exe>] | unregister    # file type registration for the current user
+python tools/make_icon.py                                      # redraws assets/rawv.ico; needs pillow
 ```
 
 A change is done when `verify.py` passes; add a check there for new behaviour. Its script
 language is in `src/script.rs` (`--script "next;dump:state.jsonl;shot:a.png;quit"`).
-Set `RAWV_DATA_DIR` to keep a run's settings and caches out of the user's profile.
+Set `RAWV_DATA_DIR` to keep a run's settings and caches out of the user's profile, and
+`RAWV_REGISTRY_ROOT` (a key below HKCU) to keep `register` out of the user's file type settings.
 Run scripted windows with `--offscreen`: they then neither cover the screen nor receive the
 input of the person at the computer.
 
@@ -53,7 +56,9 @@ The executables link the C runtime statically (`.cargo/config.toml`) and need no
 | `src/workers.rs` | `WantedPool`: workers pull from a "wanted" list the interface republishes each frame |
 | `src/command.rs` | Every action as a `Command`; key bindings and script words map to it |
 | `src/app.rs` | Owns all state, runs commands |
-| `src/theme.rs` | All colours and fonts |
+| `src/theme.rs` | All colours and fonts, the window icon |
+| `src/default_app.rs` | Registers rawv for its file types (HKCU), opens the Default apps page |
+| `assets/` | `rawv.ico`, the only source of the icon: `build.rs` puts it into both executables |
 | `tools/` | Verification driver and test photo generator |
 
 ## Rules
@@ -97,7 +102,7 @@ The executables link the C runtime statically (`.cargo/config.toml`) and need no
   Sony nor DNG and bring no XMP packet. The EXIF rating tag Windows uses (0x4746) is not
   written. Appending to a Sony RAW file without an XMP packet has unit tests and was checked
   by hand on a real file, but has no case in `verify.py`.
-- The thumbnail store is never pruned. A second running instance cannot open it and works
+- The thumbnail store is never pruned, only emptied by Clear in the settings. A second running instance cannot open it and works
   without a thumbnail cache.
 - Developed RAW images get no lens corrections (distortion, vignetting) and, without an
   embedded JPEG to follow, only the plain sRGB tone curve.

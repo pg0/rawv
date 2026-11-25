@@ -4,6 +4,7 @@ pub mod app;
 pub mod bench;
 pub mod command;
 pub mod config;
+pub mod default_app;
 pub mod draw;
 pub mod filework;
 pub mod gallery;

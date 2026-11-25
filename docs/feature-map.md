@@ -12,6 +12,7 @@ User-facing feature, where it lives, and the script word that triggers it
 | Reopen the last folder | `Config::last_folder` | `rawv` |
 | Start fullscreen | `Startup::fullscreen` | `rawv --fullscreen` |
 | Window opens where it was, also after fullscreen | `App::track_window`, `App::set_fullscreen` | automatic |
+| Register as a program for photo file types | `default_app::register`, `default_app::unregister` | `rawv-cli register`, `rawv-cli unregister` |
 
 ## Gallery (`src/gallery/`)
 
@@ -38,13 +39,14 @@ User-facing feature, where it lives, and the script word that triggers it
 
 | Feature | Entry | Trigger |
 |---|---|---|
-| Next / previous | `App::step_viewer`, `Viewer::step` | `next` `prev`, arrows, Space, Ctrl+wheel, edge buttons |
+| Next / previous | `App::step_viewer`, `Viewer::step` | `next` `prev`, Space, Page Up / Down, Backspace, Ctrl+wheel, edge buttons |
 | Continue into the next folder (nested view) | `App::step_viewer`, `Viewer::enter_roll` | same as next / previous |
 | First / last | `Viewer::go_to` | `first` `last`, Home, End |
 | Zoom at pointer | `Viewer::zoom_to` | `zoom-in` `zoom-out`, `+` `-`, wheel |
 | Fit / 100 % | `Viewer::zoom_fit`, `Viewer::zoom_actual` | `zoom-fit` `zoom-actual`, `*`, `/`, middle click switches |
 | Wheel zooms or steps | `Command::ToggleWheelAction`, `Viewer::handle_wheel` | `wheel-action`, `W` |
 | Pan | `Viewer::ui` | drag |
+| Pan with the keyboard; when the image fits, Left / Right step | `Command::Pan`, `Viewer::pan_step` | `pan-left` `pan-right` `pan-up` `pan-down`, `key:ArrowRight`, arrow keys |
 | RAW: camera preview, automatic or developed | `Command::CycleRawMode`, `Viewer::renditions` | `raw-mode`, `P` |
 | Camera preview shown until the developed image is ready | `Viewer::shown` | automatic |
 | Developed RAW images cached on this computer | `media::developed`, `Command::CycleRawCache` | `raw-cache`, settings panel |
@@ -57,6 +59,7 @@ User-facing feature, where it lives, and the script word that triggers it
 | Feature | Entry | Trigger |
 |---|---|---|
 | Fullscreen | `App::set_fullscreen` | `fullscreen`, `F`, F11, double click in viewer |
+| Clear the thumbnail and RAW caches | `Command::ClearCaches`, `ThumbStore::clear`, `DevelopedCache::clear` | `clear-caches`, Clear in the settings panel |
 | Rotate 90° / 180°, saved in the file | `App::rotate`, `media::rotate::persist` | `rotate-cw` `rotate-ccw` `rotate-180`, `R`, `L`, `U` |
 | Rate with 1 to 5 stars, saved in the file | `App::rate`, `media::rate::persist` | `rate:N`, `1` to `5`, `0` removes |
 | Reject mark, saved in the file | `App::toggle_reject` | `reject`, `X` |
