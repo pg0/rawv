@@ -251,21 +251,17 @@ impl Viewer {
         self.zoom_to(self.shown_factor * factor, Vec2::ZERO);
     }
 
-    /// Moves the image to show more of it towards `direction`. False where the image fits
-    /// the view along that axis, so there is nothing to move.
-    pub fn pan_step(&mut self, direction: Direction) -> bool {
+    /// Moves the image to show more of it towards `direction`. Where the image fits the view
+    /// along that axis there is nothing to move.
+    pub fn pan_step(&mut self, direction: Direction) {
         let (axis, sign) = match direction {
             Direction::Left => (0, 1.0),
             Direction::Right => (0, -1.0),
             Direction::Up => (1, 1.0),
             Direction::Down => (1, -1.0),
         };
-        if self.slack[axis] <= 0.0 {
-            return false;
-        }
         let moved = self.pan[axis] + sign * self.view[axis] * PAN_STEP;
         self.pan[axis] = moved.clamp(-self.slack[axis], self.slack[axis]);
-        true
     }
 
     pub fn zoom_fit(&mut self) {

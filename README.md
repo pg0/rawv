@@ -11,7 +11,7 @@ A fast, minimal photo and RAW viewer for Windows. One executable, no installer.
 - **Rate, reject, rotate, delete**: stars and the reject mark are saved inside the photo file,
   rotation rewrites the EXIF orientation only, Delete moves the file to the recycle bin.
 
-Reads JPEG, PNG, WebP, GIF, BMP, TIFF and the RAW formats `rawler` decodes (ARW, DNG, CR2,
+Reads JPEG, HEIC, PNG, WebP, GIF, BMP, TIFF and the RAW formats `rawler` decodes (ARW, DNG, CR2,
 NEF, RAF, RW2, ORF and more).
 
 ## Install
@@ -27,7 +27,7 @@ Open a terminal in the unpacked folder and run:
 rawv-cli register
 ```
 
-This registers `rawv.exe` for JPEG, PNG, WebP, GIF, BMP, TIFF and the RAW formats, for your
+This registers `rawv.exe` for JPEG, HEIC, PNG, WebP, GIF, BMP, TIFF and the RAW formats, for your
 user only (no admin rights), and opens **Settings > Apps > Default apps > rawv**. Windows lets
 only you change the default: pick rawv there for each file type, or right-click a photo,
 **Open with > rawv > Always**.
@@ -46,7 +46,7 @@ rawv --fullscreen ...
 | Key | Does |
 |---|---|
 | Space, Page Up / Down, Ctrl+Wheel | next / previous image |
-| Arrows | move a zoomed-in image; when it fits, Left / Right step (settings: always step) |
+| Arrows | move a zoomed-in image (settings: next / previous instead) |
 | Wheel, `+` `-` | zoom (`W` swaps wheel and Ctrl+wheel) |
 | `*` / `/` | fit to window / 100 % |
 | `F`, double click | fullscreen |
@@ -65,7 +65,8 @@ rawv --fullscreen ...
 - Ratings are XMP metadata written into the photo file itself; no sidecar files. A Sony RAW
   file without a rating field grows by about 3 KB the first time it is rated.
 - A network share has no recycle bin: there, Delete asks first and then deletes for good.
-- Not supported: HEIC, AVIF, JPEG XL, colour management, lens corrections for developed RAW.
+- HEIC and HEIF (iPhone photos) are shown, but take no rating and rotate for the session only.
+- Not supported: AVIF, JPEG XL, colour management, lens corrections for developed RAW.
 
 ## Build
 

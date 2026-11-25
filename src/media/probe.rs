@@ -8,7 +8,7 @@ use std::fs::File;
 use std::io::{self, Cursor, Read, Seek, SeekFrom};
 use std::path::Path;
 
-use super::formats::Kind;
+use super::formats::{self, Kind};
 use super::orientation::Orientation;
 use super::tiff::{self, Entry, TiffReader};
 use super::xmp::{self, Rating};
@@ -98,7 +98,8 @@ impl MediaFile {
                 source: self,
                 position: 0,
             }),
-            Kind::Bitmap => Probe::default(),
+            Kind::Heic if formats::is_jpeg(&self.head) => probe_jpeg(&self.head),
+            Kind::Bitmap | Kind::Heic => Probe::default(),
         }
     }
 }

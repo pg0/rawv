@@ -20,7 +20,8 @@ pub const PAGE_ROWS: usize = 4;
 /// Thumbnail size presets: label and scale.
 pub const THUMB_SIZES: [(&str, f32); 3] = [("S", 1.0), ("M", 1.6), ("L", 2.4)];
 
-fn nearest_thumb_size(scale: f32) -> usize {
+/// Index in [`THUMB_SIZES`] of the preset nearest to `scale`.
+pub fn thumb_size_index(scale: f32) -> usize {
     let distance = |index: &usize| (THUMB_SIZES[*index].1 - scale).abs();
     (0..THUMB_SIZES.len())
         .min_by(|a, b| distance(a).total_cmp(&distance(b)))
@@ -29,12 +30,12 @@ fn nearest_thumb_size(scale: f32) -> usize {
 
 /// Label of the preset nearest to `scale`.
 pub fn thumb_size_label(scale: f32) -> &'static str {
-    THUMB_SIZES[nearest_thumb_size(scale)].0
+    THUMB_SIZES[thumb_size_index(scale)].0
 }
 
 /// Scale of the preset after the one nearest to `scale`; the largest is followed by the smallest.
 pub fn next_thumb_size(scale: f32) -> f32 {
-    THUMB_SIZES[(nearest_thumb_size(scale) + 1) % THUMB_SIZES.len()].1
+    THUMB_SIZES[(thumb_size_index(scale) + 1) % THUMB_SIZES.len()].1
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

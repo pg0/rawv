@@ -31,7 +31,8 @@ pub struct Animation {
     pub frames: Vec<Frame>,
 }
 
-/// The frames of a GIF or WebP file; `None` for other formats.
+/// The frames of a GIF or animated WebP file; `None` for other files, which are decoded
+/// as still pictures.
 pub fn decode(path: &Path, max_side: u32) -> Result<Option<Animation>, MediaError> {
     let format = ImageReader::open(path)?.with_guessed_format()?.format();
     let reader =
@@ -40,9 +41,13 @@ pub fn decode(path: &Path, max_side: u32) -> Result<Option<Animation>, MediaErro
         Some(ImageFormat::Gif) => GifDecoder::new(reader()?)
             .map_err(MediaError::from_display)?
             .into_frames(),
-        Some(ImageFormat::WebP) => WebPDecoder::new(reader()?)
-            .map_err(MediaError::from_display)?
-            .into_frames(),
+        Some(ImageFormat::WebP) => {
+            let decoder = WebPDecoder::new(reader()?).map_err(MediaError::from_display)?;
+            if !decoder.has_animation() {
+                return Ok(None);
+            }
+            decoder.into_frames()
+        }
         _ => return Ok(None),
     };
     let mut animation = Animation {
@@ -65,7 +70,7 @@ pub fn decode(path: &Path, max_side: u32) -> Result<Option<Animation>, MediaErro
         }
         animation.frames.push(Frame { pixels, delay });
     }
-    Ok(Some(animation))
+    Ok((!animation.frames.is_empty()).then_some(animation))
 }
 
 fn shown_for(delay: Duration) -> Duration {
@@ -125,6 +130,17 @@ mod tests {
                 .iter()
                 .all(|frame| frame.delay == DEFAULT_DELAY)
         );
+        std::fs::remove_file(&path).expect("cleanup");
+    }
+
+    #[test]
+    fn a_still_webp_is_left_to_the_still_decoder() {
+        let path =
+            std::env::temp_dir().join(format!("rawv-test-{}-still.webp", std::process::id()));
+        RgbaImage::from_pixel(6, 4, Rgba([10, 120, 200, 255]))
+            .save(&path)
+            .expect("save");
+        assert!(decode(&path, 4096).expect("decode").is_none());
         std::fs::remove_file(&path).expect("cleanup");
     }
 

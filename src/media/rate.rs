@@ -42,7 +42,7 @@ pub fn persist(path: &Path, kind: Kind, rating: Rating) -> io::Result<RateOutcom
     match kind {
         Kind::Jpeg => rate_jpeg(path, rating),
         Kind::Raw => rate_tiff(path, rating),
-        Kind::Bitmap => Ok(RateOutcome::Unsupported),
+        Kind::Bitmap | Kind::Heic => Ok(RateOutcome::Unsupported),
     }
 }
 

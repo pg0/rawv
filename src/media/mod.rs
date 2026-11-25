@@ -3,6 +3,7 @@
 pub mod animation;
 pub mod developed;
 pub mod formats;
+pub mod heic;
 pub mod load;
 pub mod orientation;
 pub mod pixels;

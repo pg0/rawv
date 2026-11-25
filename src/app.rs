@@ -8,13 +8,15 @@ use egui::{
     Align, Align2, Color32, Layout, Rect, RichText, Sense, Stroke, Ui, ViewportCommand, vec2,
 };
 
-use crate::command::{self, Command, Direction, Mode};
+use crate::command::{self, Command, Direction, Mode, Setting};
 use crate::config::{self, ArrowAction, Config, WheelAction, WindowGeometry};
+use crate::draw;
 use crate::filework::{Done, FileWorker, Job, Outcome};
 use crate::gallery::{Gallery, GalleryContext, layout};
 use crate::library::lister::{ListResult, Lister};
-use crate::library::listing::ImageEntry;
+use crate::library::listing::{ImageEntry, SortOrder};
 use crate::media::developed::DevelopedCache;
+use crate::media::load::RawMode;
 use crate::media::pixels::{self, Channels};
 use crate::media::rate::RateOutcome;
 use crate::media::remove::Removal;
@@ -148,6 +150,18 @@ impl App {
 
     pub fn starts_fullscreen(&self) -> bool {
         self.fullscreen
+    }
+
+    /// Asks Windows for a dark title bar in the first pass, while the window is still hidden,
+    /// and brings the window to the front in the second, once it shows: Windows redraws the
+    /// title bar in the new colours only when the window's activation changes, and a window
+    /// opened from Explorer is expected in front. A scripted run stays in the background.
+    fn prepare_window(&self, ctx: &egui::Context) {
+        match ctx.cumulative_pass_nr() {
+            0 => ctx.send_viewport_cmd(ViewportCommand::SetTheme(egui::SystemTheme::Dark)),
+            1 if self.script.is_none() => ctx.send_viewport_cmd(ViewportCommand::Focus),
+            _ => {}
+        }
     }
 
     /// Connects background threads to the window so they can wake it.
@@ -492,75 +506,40 @@ impl App {
                 }
             }
             Command::ToggleAllRolls => self.gallery.toggle_all(),
-            Command::ToggleNested => {
-                let nested = !self.gallery.nested;
-                self.gallery.set_nested(nested, &mut self.lister);
-                self.config.nested = nested;
-                self.say(if nested {
-                    "All nested subfolders"
-                } else {
-                    "Direct subfolders only"
-                });
-            }
+            Command::ToggleNested => self.apply(Setting::Nested(!self.gallery.nested)),
             Command::ScaleThumbs(factor) => self.set_thumb_scale(self.gallery.thumb_scale * factor),
-            Command::CycleThumbSize => {
-                self.set_thumb_scale(layout::next_thumb_size(self.gallery.thumb_scale));
-            }
-            Command::CycleSort => {
-                let sort = self.gallery.sort.next();
-                self.gallery.set_sort(sort);
-                self.config.sort = sort;
-            }
+            Command::CycleThumbSize => self.apply(Setting::ThumbSize(layout::next_thumb_size(
+                self.gallery.thumb_scale,
+            ))),
+            Command::CycleSort => self.apply(Setting::Sort(self.gallery.sort.next())),
             Command::Next => self.step_viewer(1),
             Command::Prev => self.step_viewer(-1),
             Command::First => self.with_viewer(|viewer| viewer.go_to(0)),
             Command::Last => self.with_viewer(|viewer| viewer.go_to(usize::MAX)),
-            Command::Arrow(direction) => {
-                let moved = self.config.arrows == ArrowAction::Move
-                    && self
-                        .viewer
-                        .as_mut()
-                        .is_some_and(|viewer| viewer.pan_step(direction));
-                match (direction, self.config.arrows) {
-                    _ if moved => {}
-                    (Direction::Left, _) | (Direction::Up, ArrowAction::Step) => {
-                        self.step_viewer(-1);
-                    }
-                    (Direction::Right, _) | (Direction::Down, ArrowAction::Step) => {
-                        self.step_viewer(1);
-                    }
-                    (Direction::Up | Direction::Down, ArrowAction::Move) => {}
-                }
-            }
+            Command::Arrow(direction) => match (self.config.arrows, direction) {
+                (ArrowAction::Move, _) => self.with_viewer(|viewer| viewer.pan_step(direction)),
+                (ArrowAction::Step, Direction::Left | Direction::Up) => self.step_viewer(-1),
+                (ArrowAction::Step, Direction::Right | Direction::Down) => self.step_viewer(1),
+            },
             Command::ZoomIn => self.with_viewer(|viewer| viewer.zoom_step(true)),
             Command::ZoomOut => self.with_viewer(|viewer| viewer.zoom_step(false)),
             Command::ZoomFit => self.with_viewer(Viewer::zoom_fit),
             Command::ZoomActual => self.with_viewer(Viewer::zoom_actual),
-            Command::CycleRawMode => {
-                self.config.raw = self.config.raw.next();
-                let raw = self.config.raw;
-                self.with_viewer(|viewer| viewer.raw_mode = raw);
-                self.say(format!("RAW \u{b7} {}", raw.label()));
-            }
-            Command::CycleRawCache => {
-                let size = config::next_raw_cache_size(self.config.raw_cache_gb);
-                self.config.raw_cache_gb = size;
-                self.developed.set_budget(config::raw_cache_bytes(size));
-            }
+            Command::CycleRawMode => self.apply(Setting::Raw(self.config.raw.next())),
+            Command::CycleRawCache => self.apply(Setting::RawCache(config::next_raw_cache_size(
+                self.config.raw_cache_gb,
+            ))),
             Command::ClearCaches => {
                 self.thumb_store.clear();
                 self.developed.clear();
                 self.say("Thumbnail and RAW caches cleared");
             }
-            Command::ToggleInfo => self.config.show_info = !self.config.show_info,
-            Command::ToggleWheelAction => {
-                self.config.wheel = self.config.wheel.toggled();
-                self.say(match self.config.wheel {
-                    WheelAction::Zoom => "Wheel zooms \u{b7} Ctrl+Wheel steps",
-                    WheelAction::Step => "Wheel steps \u{b7} Ctrl+Wheel zooms",
-                });
+            Command::Set(setting) => self.apply(setting),
+            Command::ToggleInfo => self.apply(Setting::Info(!self.config.show_info)),
+            Command::ToggleWheelAction => self.apply(Setting::Wheel(self.config.wheel.toggled())),
+            Command::ToggleArrowAction => {
+                self.apply(Setting::Arrows(self.config.arrows.toggled()));
             }
-            Command::ToggleArrowAction => self.config.arrows = self.config.arrows.toggled(),
             Command::ToggleHelp => {
                 self.help = !self.help;
                 self.settings = false;
@@ -617,6 +596,45 @@ impl App {
     fn with_viewer(&mut self, action: impl FnOnce(&mut Viewer)) {
         if let Some(viewer) = &mut self.viewer {
             action(viewer);
+        }
+    }
+
+    /// Gives one setting a value: the only place settings change.
+    fn apply(&mut self, setting: Setting) {
+        match setting {
+            Setting::Wheel(wheel) => {
+                self.config.wheel = wheel;
+                self.say(match wheel {
+                    WheelAction::Zoom => "Wheel zooms \u{b7} Ctrl+Wheel steps",
+                    WheelAction::Step => "Wheel steps \u{b7} Ctrl+Wheel zooms",
+                });
+            }
+            Setting::Arrows(arrows) => self.config.arrows = arrows,
+            Setting::Raw(raw) => {
+                self.config.raw = raw;
+                self.with_viewer(|viewer| viewer.raw_mode = raw);
+                self.say(format!("RAW \u{b7} {}", raw.label()));
+            }
+            Setting::RawCache(gigabytes) => {
+                self.config.raw_cache_gb = gigabytes;
+                self.developed
+                    .set_budget(config::raw_cache_bytes(gigabytes));
+            }
+            Setting::Info(show) => self.config.show_info = show,
+            Setting::Nested(nested) => {
+                self.gallery.set_nested(nested, &mut self.lister);
+                self.config.nested = nested;
+                self.say(if nested {
+                    "All nested subfolders"
+                } else {
+                    "Direct subfolders only"
+                });
+            }
+            Setting::ThumbSize(scale) => self.set_thumb_scale(scale),
+            Setting::Sort(sort) => {
+                self.gallery.set_sort(sort);
+                self.config.sort = sort;
+            }
         }
     }
 
@@ -822,7 +840,7 @@ impl App {
                             commands.push(Command::ToggleSettings);
                         }
                         let all = "Expand / collapse all rolls (A)";
-                        if header_button(ui, "All", theme::INK, all) {
+                        if header_icon_button(ui, theme::INK, all, draw::expand_all_icon) {
                             commands.push(Command::ToggleAllRolls);
                         }
                         let nested_color = if self.gallery.nested {
@@ -831,18 +849,28 @@ impl App {
                             theme::INK
                         };
                         let nested = "Rolls for all nested subfolders, not only direct ones (N)";
-                        if header_button(ui, "Nested", nested_color, nested) {
+                        if header_icon_button(ui, nested_color, nested, draw::subfolders_icon) {
                             commands.push(Command::ToggleNested);
                         }
-                        let size = format!(
-                            "Size {}",
-                            layout::thumb_size_label(self.gallery.thumb_scale)
-                        );
-                        if header_button(ui, &size, theme::INK, "Thumbnail size (T)") {
+                        let size = layout::thumb_size_index(self.gallery.thumb_scale);
+                        let tooltip = format!("Thumbnail size {} (T)", layout::THUMB_SIZES[size].0);
+                        let per_row = layout::THUMB_SIZES.len() - size;
+                        if header_icon_button(ui, theme::INK, &tooltip, |painter, square, color| {
+                            draw::thumb_size_icon(painter, square, color, per_row);
+                        }) {
                             commands.push(Command::CycleThumbSize);
                         }
-                        let sort = "Change sort order (S)";
-                        if header_button(ui, self.gallery.sort.label(), theme::INK, sort) {
+                        let sort = self.gallery.sort;
+                        let tooltip = format!("Sort: {} (S)", sort.label());
+                        let (by_date, descending) = match sort {
+                            SortOrder::NameAscending => (false, false),
+                            SortOrder::NameDescending => (false, true),
+                            SortOrder::DateAscending => (true, false),
+                            SortOrder::DateDescending => (true, true),
+                        };
+                        if header_icon_button(ui, theme::INK, &tooltip, |painter, square, color| {
+                            draw::sort_icon(painter, square, color, by_date, descending);
+                        }) {
                             commands.push(Command::CycleSort);
                         }
                     });
@@ -859,61 +887,110 @@ impl App {
 
     /// The settings as rows of name, current value and key. Clicking a value changes it.
     fn settings_panel(&self, ctx: &egui::Context) -> Vec<Command> {
-        let on_off = |on: bool| if on { "On" } else { "Off" };
-        let nested = if self.gallery.nested {
-            "All nested"
-        } else {
-            "Direct only"
+        let choice = |current: Setting, options: Vec<(String, Setting)>| SettingControl::Choice {
+            current,
+            options,
         };
-        let size = layout::thumb_size_label(self.gallery.thumb_scale);
-        let raw_cache = config::raw_cache_label(self.config.raw_cache_gb);
-        let everywhere = [
-            (
-                "Mouse wheel in viewer",
-                self.config.wheel.label(),
-                "W",
-                Command::ToggleWheelAction,
-            ),
-            (
-                "Arrow keys in viewer",
-                self.config.arrows.label(),
-                "",
-                Command::ToggleArrowAction,
-            ),
-            (
-                "RAW files",
-                self.config.raw.label(),
-                "P",
-                Command::CycleRawMode,
-            ),
-            (
-                "Developed RAW cache",
-                raw_cache.as_str(),
-                "",
-                Command::CycleRawCache,
-            ),
-            (
-                "Thumbnail and RAW caches",
-                "Clear",
-                "",
-                Command::ClearCaches,
-            ),
-            (
-                "Info line in viewer",
-                on_off(self.config.show_info),
-                "I",
-                Command::ToggleInfo,
-            ),
+        let listed = |values: &[(&str, Setting)]| {
+            values
+                .iter()
+                .map(|(label, setting)| ((*label).to_owned(), *setting))
+                .collect::<Vec<_>>()
+        };
+        let size = layout::THUMB_SIZES[layout::thumb_size_index(self.gallery.thumb_scale)].1;
+        let everywhere = vec![
+            SettingRow {
+                name: "Mouse wheel in viewer",
+                key: "W",
+                control: choice(
+                    Setting::Wheel(self.config.wheel),
+                    WheelAction::ALL
+                        .iter()
+                        .map(|wheel| (wheel.label().to_owned(), Setting::Wheel(*wheel)))
+                        .collect(),
+                ),
+            },
+            SettingRow {
+                name: "Arrow keys in viewer",
+                key: "",
+                control: choice(
+                    Setting::Arrows(self.config.arrows),
+                    ArrowAction::ALL
+                        .iter()
+                        .map(|arrows| (arrows.label().to_owned(), Setting::Arrows(*arrows)))
+                        .collect(),
+                ),
+            },
+            SettingRow {
+                name: "RAW files",
+                key: "P",
+                control: choice(
+                    Setting::Raw(self.config.raw),
+                    RawMode::ALL
+                        .iter()
+                        .map(|raw| (raw.label().to_owned(), Setting::Raw(*raw)))
+                        .collect(),
+                ),
+            },
+            SettingRow {
+                name: "Developed RAW cache",
+                key: "",
+                control: choice(
+                    Setting::RawCache(self.config.raw_cache_gb),
+                    config::RAW_CACHE_SIZES_GB
+                        .iter()
+                        .map(|size| (config::raw_cache_label(*size), Setting::RawCache(*size)))
+                        .collect(),
+                ),
+            },
+            SettingRow {
+                name: "Thumbnail and RAW caches",
+                key: "",
+                control: SettingControl::Action("Clear", Command::ClearCaches),
+            },
+            SettingRow {
+                name: "Info line in viewer",
+                key: "I",
+                control: choice(
+                    Setting::Info(self.config.show_info),
+                    listed(&[("On", Setting::Info(true)), ("Off", Setting::Info(false))]),
+                ),
+            },
         ];
-        let gallery_only = [
-            ("Subfolders as rolls", nested, "N", Command::ToggleNested),
-            ("Thumbnail size", size, "T", Command::CycleThumbSize),
-            (
-                "Sort order",
-                self.gallery.sort.label(),
-                "S",
-                Command::CycleSort,
-            ),
+        let gallery_only = vec![
+            SettingRow {
+                name: "Subfolders as rolls",
+                key: "N",
+                control: choice(
+                    Setting::Nested(self.gallery.nested),
+                    listed(&[
+                        ("Direct only", Setting::Nested(false)),
+                        ("All nested", Setting::Nested(true)),
+                    ]),
+                ),
+            },
+            SettingRow {
+                name: "Thumbnail size",
+                key: "T",
+                control: choice(
+                    Setting::ThumbSize(size),
+                    layout::THUMB_SIZES
+                        .iter()
+                        .map(|(label, scale)| ((*label).to_owned(), Setting::ThumbSize(*scale)))
+                        .collect(),
+                ),
+            },
+            SettingRow {
+                name: "Sort order",
+                key: "S",
+                control: choice(
+                    Setting::Sort(self.gallery.sort),
+                    SortOrder::ALL
+                        .iter()
+                        .map(|sort| (sort.label().to_owned(), Setting::Sort(*sort)))
+                        .collect(),
+                ),
+            },
         ];
         let rows = everywhere
             .into_iter()
@@ -939,25 +1016,15 @@ impl App {
                     .num_columns(3)
                     .spacing([16.0, 8.0])
                     .show(ui, |ui| {
-                        for (name, value, key, command) in rows {
+                        for row in rows {
                             ui.label(
-                                RichText::new(name)
+                                RichText::new(row.name)
                                     .font(theme::body(12.0))
                                     .color(theme::INK),
                             );
-                            let text = RichText::new(value)
-                                .font(theme::body(12.0))
-                                .color(theme::ACCENT);
-                            let button = egui::Button::new(text)
-                                .fill(theme::BUTTON)
-                                .stroke(Stroke::new(1.0, theme::BUTTON_BORDER))
-                                .corner_radius(8.0)
-                                .min_size(vec2(220.0, 26.0));
-                            if ui.add(button).clicked() {
-                                commands.push(command);
-                            }
+                            commands.extend(row.control.show(ui, row.name));
                             ui.label(
-                                RichText::new(key)
+                                RichText::new(row.key)
                                     .font(theme::mono(12.0))
                                     .color(theme::MUTED),
                             );
@@ -966,9 +1033,11 @@ impl App {
                     });
                 ui.add_space(10.0);
                 ui.label(
-                    RichText::new("Click a value to change it.")
-                        .font(theme::body(11.0))
-                        .color(theme::FAINT),
+                    RichText::new(
+                        "Pick a value from the list; the key on the right steps through them.",
+                    )
+                    .font(theme::body(11.0))
+                    .color(theme::FAINT),
                 );
             });
         if modal.should_close() {
@@ -1094,6 +1163,7 @@ impl App {
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        self.prepare_window(&ctx);
         self.track_window(&ctx);
 
         self.thumbs.begin_frame(&ctx);
@@ -1260,7 +1330,89 @@ fn drag_picture(thumbnail_jpeg: &[u8]) -> Option<Vec<u8>> {
     pixels::encode_jpeg(&small, 85).ok()
 }
 
+/// One row of the settings panel.
+struct SettingRow {
+    name: &'static str,
+    /// The key that steps through the values; empty where there is none.
+    key: &'static str,
+    control: SettingControl,
+}
+
+enum SettingControl {
+    /// A list of every value, the current one shown.
+    Choice {
+        current: Setting,
+        options: Vec<(String, Setting)>,
+    },
+    /// A button for an action that is not a setting.
+    Action(&'static str, Command),
+}
+
+impl SettingControl {
+    fn show(self, ui: &mut Ui, name: &str) -> Option<Command> {
+        let width = 220.0;
+        match self {
+            Self::Choice { current, options } => {
+                let shown = options
+                    .iter()
+                    .find(|(_, setting)| *setting == current)
+                    .map_or("", |(label, _)| label.as_str());
+                let mut chosen = None;
+                egui::ComboBox::from_id_salt(name)
+                    .width(width)
+                    .selected_text(
+                        RichText::new(shown)
+                            .font(theme::body(12.0))
+                            .color(theme::ACCENT),
+                    )
+                    .show_ui(ui, |ui| {
+                        for (label, setting) in &options {
+                            let text = RichText::new(label).font(theme::body(12.0));
+                            if ui.selectable_label(*setting == current, text).clicked() {
+                                chosen = Some(Command::Set(*setting));
+                            }
+                        }
+                    });
+                chosen
+            }
+            Self::Action(label, command) => {
+                let text = RichText::new(label)
+                    .font(theme::body(12.0))
+                    .color(theme::ACCENT);
+                let button = egui::Button::new(text)
+                    .fill(theme::BUTTON)
+                    .stroke(Stroke::new(1.0, theme::BUTTON_BORDER))
+                    .corner_radius(8.0)
+                    .min_size(vec2(width, 26.0));
+                ui.add(button).clicked().then_some(command)
+            }
+        }
+    }
+}
+
+/// A header button showing a symbol that `icon` draws into a square in its middle.
+fn header_icon_button(
+    ui: &mut Ui,
+    color: Color32,
+    tooltip: &str,
+    icon: impl FnOnce(&egui::Painter, Rect, Color32),
+) -> bool {
+    let response = header_button_response(ui, "", color, tooltip);
+    let square = Rect::from_center_size(response.rect.center(), vec2(14.0, 14.0));
+    icon(ui.painter(), square, color);
+    response.clicked()
+}
+
 fn header_button(ui: &mut Ui, text: &str, color: Color32, tooltip: &str) -> bool {
+    header_button_response(ui, text, color, tooltip).clicked()
+}
+
+fn header_button_response(
+    ui: &mut Ui,
+    text: &str,
+    color: Color32,
+    tooltip: &str,
+) -> egui::Response {
     let button = egui::Button::new(RichText::new(text).size(12.0).color(color))
         .fill(theme::BUTTON)
         .stroke(Stroke::new(1.0, theme::BUTTON_BORDER))
@@ -1271,5 +1423,5 @@ fn header_button(ui: &mut Ui, text: &str, color: Color32, tooltip: &str) -> bool
         ui.painter()
             .rect_filled(response.rect, 8.0, theme::BUTTON_HOVER.gamma_multiply(0.3));
     }
-    response.clicked()
+    response
 }

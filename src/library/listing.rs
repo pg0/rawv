@@ -88,6 +88,13 @@ pub enum SortOrder {
 }
 
 impl SortOrder {
+    pub const ALL: [Self; 4] = [
+        Self::NameAscending,
+        Self::NameDescending,
+        Self::DateAscending,
+        Self::DateDescending,
+    ];
+
     pub fn next(self) -> Self {
         match self {
             Self::NameAscending => Self::NameDescending,

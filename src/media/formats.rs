@@ -8,6 +8,8 @@ pub enum Kind {
     Raw,
     /// Formats decoded by the `image` crate.
     Bitmap,
+    /// HEIC and HEIF, as iPhones take them.
+    Heic,
 }
 
 const JPEG_EXTENSIONS: &[&str] = &["jpg", "jpeg", "jpe", "jfif"];
@@ -19,12 +21,15 @@ const RAW_EXTENSIONS: &[&str] = &[
 
 const BITMAP_EXTENSIONS: &[&str] = &["png", "webp", "gif", "bmp", "tif", "tiff"];
 
+const HEIC_EXTENSIONS: &[&str] = &["heic", "heif", "hif"];
+
 /// Every file extension rawv shows, in lower case and without the dot.
 pub fn extensions() -> impl Iterator<Item = &'static str> {
     JPEG_EXTENSIONS
         .iter()
         .chain(RAW_EXTENSIONS)
         .chain(BITMAP_EXTENSIONS)
+        .chain(HEIC_EXTENSIONS)
         .copied()
 }
 
@@ -40,6 +45,7 @@ pub fn kind_of(path: &Path) -> Option<Kind> {
         e if JPEG_EXTENSIONS.contains(&e) => Some(Kind::Jpeg),
         e if RAW_EXTENSIONS.contains(&e) => Some(Kind::Raw),
         e if BITMAP_EXTENSIONS.contains(&e) => Some(Kind::Bitmap),
+        e if HEIC_EXTENSIONS.contains(&e) => Some(Kind::Heic),
         _ => None,
     }
 }
@@ -53,6 +59,7 @@ mod tests {
         assert_eq!(kind_of(Path::new("a/DSC0001.ARW")), Some(Kind::Raw));
         assert_eq!(kind_of(Path::new("a/photo.JpEg")), Some(Kind::Jpeg));
         assert_eq!(kind_of(Path::new("a/scan.tiff")), Some(Kind::Bitmap));
+        assert_eq!(kind_of(Path::new("a/IMG_1234.HEIC")), Some(Kind::Heic));
         assert_eq!(kind_of(Path::new("a/notes.txt")), None);
         assert_eq!(kind_of(Path::new("a/noext")), None);
     }

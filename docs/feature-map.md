@@ -19,10 +19,10 @@ User-facing feature, where it lives, and the script word that triggers it
 | Feature | Entry | Trigger |
 |---|---|---|
 | Folder and subfolders as rolls | `Gallery::on_listing` | automatic |
-| All nested subfolders as rolls | `Command::ToggleNested`, `Gallery::set_nested` | `nested`, `N`, `Nested` button |
+| All nested subfolders as rolls | `Command::ToggleNested`, `Gallery::set_nested` | `nested`, `N`, subfolders button in the header |
 | Camera thumbnail first, sharper one after | `ThumbService::lookup` | automatic |
 | Expand or collapse a roll | `Command::ToggleRoll` | chevron, title of the open folder |
-| Expand or collapse all | `Command::ToggleAllRolls` | `toggle-all`, `A`, `All` button |
+| Expand or collapse all | `Command::ToggleAllRolls` | `toggle-all`, `A`, expand button in the header |
 | Enter a subfolder | `Command::Open` | click roll title, breadcrumb |
 | Parent folder | `Command::GoParent` | `parent`, `Backspace` |
 | Move selection | `Gallery::move_selection` | `left` `right` `up` `down`, arrow keys |
@@ -31,8 +31,8 @@ User-facing feature, where it lives, and the script word that triggers it
 | Right-click menu: open in the default app, show in folder | `Command::OpenExternally`, `Command::ShowInFolder`, `App::hand_to_explorer` | right click on a frame, `open-externally`, `show-in-folder` |
 | Drag an image's file into another program | `Command::DragOut`, `App::start_drag_out` | drag a frame out of the window |
 | Thumbnail size | `Command::ScaleThumbs` | `thumbs-larger`, `thumbs-smaller`, `+` `-`, Ctrl+wheel |
-| Thumbnail size S / M / L | `Command::CycleThumbSize`, `layout::THUMB_SIZES` | `thumb-size`, `T`, `Size` button |
-| Sort order | `Command::CycleSort` | `sort`, `S`, sort button |
+| Thumbnail size S / M / L | `Command::CycleThumbSize`, `layout::THUMB_SIZES` | `thumb-size`, `T`, size button in the header |
+| Sort order | `Command::CycleSort` | `sort`, `S`, sort button in the header |
 | Reload | `Command::Refresh` | `refresh`, `F5` |
 
 ## Viewer (`src/viewer/`)
@@ -46,7 +46,7 @@ User-facing feature, where it lives, and the script word that triggers it
 | Fit / 100 % | `Viewer::zoom_fit`, `Viewer::zoom_actual` | `zoom-fit` `zoom-actual`, `*`, `/`, middle click switches |
 | Wheel zooms or steps | `Command::ToggleWheelAction`, `Viewer::handle_wheel` | `wheel-action`, `W` |
 | Pan | `Viewer::ui` | drag |
-| Pan with the keyboard; when the image fits, Left / Right step | `Command::Arrow`, `Viewer::pan_step` | `arrow-left` `arrow-right` `arrow-up` `arrow-down`, `key:ArrowRight`, arrow keys |
+| Pan with the keyboard | `Command::Arrow`, `Viewer::pan_step` | `arrow-left` `arrow-right` `arrow-up` `arrow-down`, `key:ArrowRight`, arrow keys |
 | Arrow keys move or always step | `Command::ToggleArrowAction`, `Config::arrows` | `arrow-action`, settings panel |
 | RAW: camera preview, automatic or developed | `Command::CycleRawMode`, `Viewer::renditions` | `raw-mode`, `P` |
 | Camera preview shown until the developed image is ready | `Viewer::shown` | automatic |

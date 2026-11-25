@@ -152,6 +152,87 @@ pub fn chevron(painter: &Painter, center: Pos2, expanded: bool, color: Color32) 
     painter.add(Shape::convex_polygon(points, color, egui::Stroke::NONE));
 }
 
+/// A folder with two subfolders hanging off it, filling `square`.
+pub fn subfolders_icon(painter: &Painter, square: Rect, color: Color32) {
+    let at = |x: f32, y: f32| square.min + vec2(x, y) * (square.width() / 14.0);
+    let line = Stroke::new(1.3, color);
+    folder(
+        painter,
+        Rect::from_min_max(at(0.0, 0.0), at(8.0, 5.0)),
+        color,
+    );
+    painter.line_segment([at(2.5, 5.0), at(2.5, 12.2)], line);
+    for y in [7.5, 12.2] {
+        painter.line_segment([at(2.5, y), at(6.0, y)], line);
+        folder(
+            painter,
+            Rect::from_min_max(at(6.5, y - 1.7), at(14.0, y + 1.7)),
+            color,
+        );
+    }
+}
+
+/// Two chevrons pointing apart: open every roll.
+pub fn expand_all_icon(painter: &Painter, square: Rect, color: Color32) {
+    let at = |x: f32, y: f32| square.min + vec2(x, y) * (square.width() / 14.0);
+    let line = Stroke::new(1.6, color);
+    painter.line(vec![at(2.0, 5.5), at(7.0, 1.5), at(12.0, 5.5)], line);
+    painter.line(vec![at(2.0, 8.5), at(7.0, 12.5), at(12.0, 8.5)], line);
+}
+
+/// A grid of `per_row` × `per_row` tiles: many small thumbnails or a few large ones.
+pub fn thumb_size_icon(painter: &Painter, square: Rect, color: Color32, per_row: usize) {
+    let per_row = per_row.max(1);
+    let gap = 1.5 * square.width() / 14.0;
+    let tile = (square.width() - gap * (per_row - 1) as f32) / per_row as f32;
+    for row in 0..per_row {
+        for column in 0..per_row {
+            let min = square.min + vec2(column as f32, row as f32) * (tile + gap);
+            painter.rect_filled(Rect::from_min_size(min, vec2(tile, tile)), 1.0, color);
+        }
+    }
+}
+
+/// An arrow down for ascending or up for descending order, beside an "A" for sorting by
+/// name or a clock for sorting by date.
+pub fn sort_icon(painter: &Painter, square: Rect, color: Color32, by_date: bool, descending: bool) {
+    let at = |x: f32, y: f32| square.min + vec2(x, y) * (square.width() / 14.0);
+    let line = Stroke::new(1.5, color);
+    let (tail, head, wing) = if descending {
+        (13.0, 1.0, 4.0)
+    } else {
+        (1.0, 13.0, 10.0)
+    };
+    painter.line_segment([at(3.0, tail), at(3.0, head)], line);
+    painter.line(vec![at(0.5, wing), at(3.0, head), at(5.5, wing)], line);
+    if by_date {
+        painter.circle_stroke(at(10.0, 7.0), 3.6 * square.width() / 14.0, line);
+        painter.line(
+            vec![at(10.0, 5.0), at(10.0, 7.0), at(11.6, 7.8)],
+            Stroke::new(1.2, color),
+        );
+    } else {
+        painter.text(
+            at(10.0, 7.5),
+            egui::Align2::CENTER_CENTER,
+            "A",
+            theme::strong(11.0),
+            color,
+        );
+    }
+}
+
+/// A filled folder: a body with a tab on its upper left.
+fn folder(painter: &Painter, rect: Rect, color: Color32) {
+    let tab = Rect::from_min_size(rect.min, vec2(rect.width() * 0.45, rect.height() * 0.5));
+    painter.rect_filled(tab, 1.0, color);
+    let body = Rect::from_min_max(
+        pos2(rect.left(), rect.top() + rect.height() * 0.25),
+        rect.max,
+    );
+    painter.rect_filled(body, 1.0, color);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

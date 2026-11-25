@@ -9,6 +9,7 @@ use super::MediaError;
 use super::animation;
 use super::developed::DevelopedCache;
 use super::formats::{self, Kind};
+use super::heic;
 use super::orientation::Orientation;
 use super::pixels::{self, Channels, Pixels};
 use super::probe::{self, MediaFile, Probe, ShotInfo};
@@ -35,6 +36,8 @@ pub enum RawMode {
 }
 
 impl RawMode {
+    pub const ALL: [Self; 3] = [Self::Embedded, Self::Auto, Self::Developed];
+
     pub fn next(self) -> Self {
         match self {
             Self::Embedded => Self::Auto,
@@ -80,6 +83,7 @@ pub struct DevelopSlot<'a> {
 pub enum Source {
     Jpeg,
     Bitmap,
+    Heic,
     RawPreview,
     RawDeveloped,
 }
@@ -116,12 +120,16 @@ pub fn load_full(
         return animated(animation);
     }
     let (pixels, probe, source, raw_orientation) = match kind {
-        Kind::Jpeg => {
+        // Files are named after one format and sometimes hold another: a `.jpg` with a PNG
+        // inside, a `.heic` that is a JPEG. The content decides.
+        Kind::Jpeg | Kind::Heic => {
             let data = std::fs::read(path)?;
             if formats::is_jpeg(&data) {
                 let probe = probe::probe_jpeg(&data);
                 let pixels = pixels::decode_jpeg(&data, Channels::Rgba)?;
                 (pixels, probe, Source::Jpeg, None)
+            } else if kind == Kind::Heic {
+                (heic::decode(&data)?, Probe::default(), Source::Heic, None)
             } else {
                 let pixels = pixels::decode_bitmap(&data)?;
                 (pixels, Probe::default(), Source::Bitmap, None)

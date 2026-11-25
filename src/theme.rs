@@ -44,8 +44,6 @@ pub fn mono(size: f32) -> FontId {
 pub fn apply(ctx: &egui::Context) {
     ctx.set_fonts(fonts());
     ctx.set_theme(egui::Theme::Dark);
-    // The window's title bar is drawn by Windows; without this it follows the light app mode.
-    ctx.send_viewport_cmd(egui::ViewportCommand::SetTheme(egui::SystemTheme::Dark));
     // Panels and tooltips appear at once instead of fading in.
     ctx.all_styles_mut(|style| style.animation_time = 0.0);
     ctx.set_visuals_of(egui::Theme::Dark, visuals());

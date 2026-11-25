@@ -11,7 +11,7 @@ cargo test --release                       # unit tests
 cargo install --path . --locked            # puts rawv and rawv-cli on the PATH (~/.cargo/bin)
 cargo clippy --release --all-targets -- -D warnings
 cargo fmt
-python tools/verify.py <photo-tree>        # drives the real window (off screen), checks state and file bytes
+python tools/verify.py <photo-tree>        # drives the real window (off screen), checks state and file bytes; needs pillow (pillow-heif for the heic session)
 python tools/make_test_photos.py <out> <raw-file> <seed-jpeg>   # builds <photo-tree>; needs pillow, piexif
 target/release/rawv-cli bench <file-or-folder>                 # pipeline timings
 target/release/rawv-cli probe <file>                           # what the metadata probe finds
@@ -46,7 +46,7 @@ The executables link the C runtime statically (`.cargo/config.toml`) and need no
 
 | Folder | Holds |
 |---|---|
-| `src/media/` | File reading: `probe` (TIFF/EXIF directories, one open and one head read per file), `load` (full image), `thumb`, `rotate`, `raw` (sensor data through rawler), `render` (camera colours to display pixels), `developed` (cache of developed RAW images), `pixels` |
+| `src/media/` | File reading: `probe` (TIFF/EXIF directories, one open and one head read per file), `load` (full image), `thumb`, `rotate`, `raw` (sensor data through rawler), `render` (camera colours to display pixels), `developed` (cache of developed RAW images), `pixels`, `animation` (GIF and WebP frames), `heic` (HEIC through zune-heic, pure Rust) |
 | `src/library/` | Folder listing, natural sort, background lister |
 | `src/thumbs/` | Thumbnail store (redb, one local file) and worker service |
 | `src/gallery/` | Folder view: rolls, layout maths, selection |
@@ -82,8 +82,9 @@ The executables link the C runtime statically (`.cargo/config.toml`) and need no
     deletes for good only after the user agreed (`media/remove.rs`). Whether there is a bin is
     checked up front: told to recycle on a network share, Windows deletes without saying so.
 - Colours, fonts and sizes come from `theme.rs` and `gallery/layout.rs`.
-- A setting is a field of `Config` changed by one `Command`. Its key and its row in the
-  settings panel (`App::settings_panel`) both send that command.
+- A setting is a field of `Config` changed only in `App::apply`, through `Command::Set(Setting)`.
+  Its row in the settings panel (`App::settings_panel`) lists every value; its key steps to
+  the next value through the same `App::apply`.
 - A RAW file has two renditions (`media::load::Rendition`): the camera's embedded JPEG and
   the developed sensor data. `Viewer::renditions` decides which to load; the preview stands
   in until the developed one is ready. Developed images take brightness and contrast from
@@ -92,7 +93,7 @@ The executables link the C runtime statically (`.cargo/config.toml`) and need no
 
 ## Known limits
 
-- HEIC, AVIF and JPEG XL are not decoded. No colour management. Animated GIF and WebP files play in the viewer
+- AVIF and JPEG XL are not decoded. HEIC takes no rating and rotates for the session only. No colour management. Animated GIF and WebP files play in the viewer
   (`media/animation.rs`); one whose frames need more than 256 MB shows its first frame, and
   gallery thumbnails always show the first frame.
 - Files without an EXIF orientation value (PNG, plain JPEG) and RAW containers that are not

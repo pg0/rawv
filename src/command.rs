@@ -4,12 +4,32 @@ use std::path::PathBuf;
 
 use egui::{Key, Modifiers};
 
+use crate::config::{ArrowAction, WheelAction};
+use crate::library::listing::SortOrder;
+use crate::media::load::RawMode;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Direction {
     Left,
     Right,
     Up,
     Down,
+}
+
+/// A value for one setting. `Command::Set` is the only way a setting changes; keys that
+/// step through a setting's values send it with the next value.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Setting {
+    Wheel(WheelAction),
+    Arrows(ArrowAction),
+    Raw(RawMode),
+    /// Size limit of the developed RAW cache in gigabytes; 0 turns it off.
+    RawCache(u32),
+    Info(bool),
+    Nested(bool),
+    /// A thumbnail size preset, by its scale.
+    ThumbSize(f32),
+    Sort(SortOrder),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -72,6 +92,8 @@ pub enum Command {
     CycleRawCache,
     /// Deletes the stored thumbnails and developed RAW images.
     ClearCaches,
+    /// Gives one setting a value.
+    Set(Setting),
     ToggleInfo,
     /// Swaps what the wheel and Ctrl+wheel do in the viewer: zoom or step.
     ToggleWheelAction,
@@ -145,7 +167,7 @@ const CONFIRM: Option<Mode> = Some(Mode::Confirm);
 
 #[rustfmt::skip]
 const BINDINGS: &[Binding] = &[
-    bind(NONE, Key::ArrowRight, VIEWER, || Command::Arrow(Direction::Right), Some(("Arrows", "Move a zoomed-in image or step (see settings)"))),
+    bind(NONE, Key::ArrowRight, VIEWER, || Command::Arrow(Direction::Right), Some(("Arrows", "Move a zoomed-in image, or step (see settings)"))),
     bind(NONE, Key::ArrowLeft, VIEWER, || Command::Arrow(Direction::Left), None),
     bind(NONE, Key::ArrowUp, VIEWER, || Command::Arrow(Direction::Up), None),
     bind(NONE, Key::ArrowDown, VIEWER, || Command::Arrow(Direction::Down), None),

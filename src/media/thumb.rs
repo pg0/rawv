@@ -7,6 +7,7 @@ use std::path::Path;
 
 use super::MediaError;
 use super::formats::{self, Kind};
+use super::heic;
 use super::orientation::Orientation;
 use super::pixels::{self, Channels, Pixels};
 use super::probe::{Embedded, MediaFile, Probe};
@@ -118,6 +119,14 @@ pub fn make_thumb(path: &Path, kind: Kind, want: ThumbQuality) -> Result<Thumb, 
                 .decode()
                 .map_err(MediaError::from_display)?;
             scaled_thumb(pixels::from_dynamic(image), Orientation::NORMAL, 0)
+        }
+        Kind::Heic => {
+            let data = std::fs::read(path)?;
+            if formats::is_jpeg(&data) {
+                jpeg_thumb(path, want)
+            } else {
+                scaled_thumb(heic::decode(&data)?, Orientation::NORMAL, 0)
+            }
         }
     }
 }

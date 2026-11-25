@@ -33,7 +33,7 @@ pub fn source_label(source: Source, size: [u32; 2]) -> Option<&'static str> {
         }
         Source::RawPreview => Some("RAW camera preview"),
         Source::RawDeveloped => Some("RAW developed"),
-        Source::Jpeg | Source::Bitmap => None,
+        Source::Jpeg | Source::Bitmap | Source::Heic => None,
     }
 }
 

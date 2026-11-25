@@ -29,6 +29,8 @@ CENTER = "750,475"
 NEXT_BUTTON = "1465,475"
 CLOSE_BUTTON = "1469,31"
 CLEAR_CACHES_BUTTON = "803,477"
+ARROW_KEYS_LIST = "803,389"
+NEXT_PREVIOUS_CHOICE = "747,440"
 
 failures = []
 
@@ -394,6 +396,9 @@ def settings(session):
     check("settings: settings and help replace each other",
           over_help["settings"] is True and over_help["help"] is False
           and help_again["settings"] is False and help_again["help"] is True)
+    states = session.run(session.photos, ["settings", f"click:{ARROW_KEYS_LIST}", f"click:{NEXT_PREVIOUS_CHOICE}", "dump", "quit"])
+    chosen = states[0]["arrows"] if states else None
+    check("settings: a value is picked from a list", chosen == "Step", str(chosen))
 
 
 def window(session):
@@ -511,10 +516,10 @@ def keyboard(session):
     check("keyboard: Left moves back", left["viewer"]["pan"][0] > down["viewer"]["pan"][0] + 50, str(left["viewer"]["pan"]))
     check("keyboard: at the right edge Right stays on the image",
           edge["viewer"]["index"] == 5 and edge["viewer"]["pan"][0] < left["viewer"]["pan"][0] - 500, str(edge["viewer"]))
-    check("keyboard: fitted, Right steps to the next image", fit_right["viewer"]["index"] == 6, str(fit_right["viewer"]["index"]))
-    check("keyboard: fitted, Left steps back", fit_left["viewer"]["index"] == 5, str(fit_left["viewer"]["index"]))
-    check("keyboard: fitted, Down does nothing",
-          fit_down["viewer"]["index"] == 5 and fit_down["viewer"]["pan"] == [0, 0], str(fit_down["viewer"]))
+    check("keyboard: fitted, arrows never step to another image",
+          [fit_right["viewer"]["index"], fit_left["viewer"]["index"], fit_down["viewer"]["index"]] == [5, 5, 5]
+          and fit_down["viewer"]["pan"] == [0, 0],
+          f'{fit_right["viewer"]["index"]} {fit_left["viewer"]["index"]} {fit_down["viewer"]}')
     check("keyboard: Page Down, Page Up and Space step",
           page_down["viewer"]["index"] == 6 and page_up["viewer"]["index"] == 5 and space["viewer"]["index"] == 6,
           f'{page_down["viewer"]["index"]} {page_up["viewer"]["index"]} {space["viewer"]["index"]}')
@@ -640,14 +645,16 @@ def animation(session):
     frames = [Image.new("RGB", (640, 400), color) for color in colors]
     frames[0].save(folder / "a_moving.gif", save_all=True, append_images=frames[1:], duration=150, loop=0)
     frames[0].save(folder / "b_still.gif")
+    frames[2].save(folder / "c_still.webp")
     shot = session.work / "frame.png"
     states = session.run(folder / "a_moving.gif", [
-        "dump", "pause:400", "dump", "pause:400", "dump", f"shot:{shot}", "next", "dump", "pause:400", "dump", "quit",
+        "dump", "pause:400", "dump", "pause:400", "dump", f"shot:{shot}", "next", "dump", "pause:400", "dump",
+        "next", "dump", "quit",
     ])
-    check("animation: five state dumps", len(states) == 5, f"got {len(states)}")
-    if len(states) != 5:
+    check("animation: six state dumps", len(states) == 6, f"got {len(states)}")
+    if len(states) != 6:
         return
-    first, later, latest, still, still_later = (state["viewer"] for state in states)
+    first, later, latest, still, still_later, webp = (state["viewer"] for state in states)
     check("animation: all frames of an animated GIF load", first["name"] == "a_moving.gif" and first["frames"] == 6, str(first))
     shown = [first["frame"], later["frame"], latest["frame"]]
     check("animation: the frames play one after the other", len(set(shown)) == 3, str(shown))
@@ -658,9 +665,56 @@ def animation(session):
               any(sum(abs(a - b) for a, b in zip(center, color)) < 30 for color in colors), str(center))
     else:
         check("animation: the window shows a frame of the GIF", False, "no screenshot")
+    check("animation: a still WebP opens as a picture",
+          webp["name"] == "c_still.webp" and webp["loaded"] and webp["frames"] == 1 and webp["size"] == [640, 400],
+          str(webp))
     check("animation: a single-frame GIF stays still",
           still["name"] == "b_still.gif" and still["frames"] == 1 and still["frame"] == 0 and still_later["frame"] == 0,
           str(still))
+
+
+def heic(session):
+    try:
+        import pillow_heif
+        from PIL import Image, ImageDraw
+    except ImportError:
+        print("        skipped: needs pillow and pillow-heif to write a HEIC file")
+        return
+    pillow_heif.register_heif_opener()
+    folder = session.work / "heic"
+    folder.mkdir()
+    colors = {"top left": (220, 40, 40), "top right": (40, 200, 60), "bottom left": (40, 80, 230), "bottom right": (240, 220, 40)}
+    picture = Image.new("RGB", (1200, 900))
+    pen = ImageDraw.Draw(picture)
+    for (x, y), color in zip([(0, 0), (600, 0), (0, 450), (600, 450)], colors.values()):
+        pen.rectangle([x, y, x + 599, y + 449], fill=color)
+    picture.save(folder / "a_quadrants.heic", quality=95)
+    shutil.copy(session.photos / "IMG_0001.JPG", folder / "b_really_a_jpeg.heic")
+    shot = session.work / "heic.png"
+    states = session.run(folder / "a_quadrants.heic", ["dump", f"shot:{shot}", "next", "dump", "escape", "dump", "quit"])
+    check("heic: three state dumps", len(states) == 3, f"got {len(states)}")
+    if len(states) != 3:
+        return
+    quadrants, jpeg, gallery = states
+    check("heic: a HEIC file opens at full size",
+          quadrants["viewer"]["source"] == "Heic" and quadrants["viewer"]["size"] == [1200, 900], str(quadrants["viewer"]))
+    if shot.exists():
+        image = Image.open(shot).convert("RGB")
+        middle_x, middle_y = image.width // 2, image.height // 2
+        offsets = {"top left": (-1, -1), "top right": (1, -1), "bottom left": (-1, 1), "bottom right": (1, 1)}
+        wrong = []
+        for name, color in colors.items():
+            dx, dy = offsets[name]
+            shown = image.getpixel((middle_x + dx * image.width // 8, middle_y + dy * image.height // 8))
+            if sum(abs(a - b) for a, b in zip(shown, color)) > 40:
+                wrong.append(f"{name} {shown}")
+        check("heic: shown upright in its own colours", not wrong, ", ".join(wrong))
+    else:
+        check("heic: shown upright in its own colours", False, "no screenshot")
+    check("heic: a .heic file holding a JPEG opens as one",
+          jpeg["viewer"]["name"] == "b_really_a_jpeg.heic" and jpeg["viewer"]["source"] == "Jpeg"
+          and jpeg["viewer"]["size"] == [6000, 4000], str(jpeg["viewer"]))
+    check("heic: both are listed in the gallery", gallery["rolls"][0]["images"] == 2, str(gallery["rolls"][0]))
 
 
 SESSIONS = {
@@ -679,6 +733,7 @@ SESSIONS = {
     "caches": caches,
     "register": register,
     "animation": animation,
+    "heic": heic,
 }
 
 

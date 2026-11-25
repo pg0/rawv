@@ -51,6 +51,8 @@ pub enum WheelAction {
 }
 
 impl WheelAction {
+    pub const ALL: [Self; 2] = [Self::Zoom, Self::Step];
+
     pub fn toggled(self) -> Self {
         match self {
             Self::Zoom => Self::Step,
@@ -69,7 +71,7 @@ impl WheelAction {
 /// What the arrow keys do in the viewer.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub enum ArrowAction {
-    /// Move a zoomed-in image; where it fits, Left and Right step.
+    /// Move a zoomed-in image; never step to another image.
     #[default]
     Move,
     /// Always go to the previous (Left, Up) or next (Right, Down) image.
@@ -77,6 +79,8 @@ pub enum ArrowAction {
 }
 
 impl ArrowAction {
+    pub const ALL: [Self; 2] = [Self::Move, Self::Step];
+
     pub fn toggled(self) -> Self {
         match self {
             Self::Move => Self::Step,
