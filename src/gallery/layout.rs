@@ -49,6 +49,19 @@ impl Metrics {
         }
     }
 
+    /// Frames of about the preset size, widened so that whole columns fill `inner_width`
+    /// without a gap at the right, whatever the window size.
+    pub fn fitted(thumb_scale: f32, inner_width: f32) -> Self {
+        let preset = Self::new(thumb_scale);
+        let columns = preset.columns(inner_width) as f32;
+        let width = ((inner_width + FRAME_GAP) / columns - FRAME_GAP)
+            .floor()
+            .max(1.0);
+        Self {
+            frame: vec2(width, (width * BASE_FRAME.y / BASE_FRAME.x).round()),
+        }
+    }
+
     fn pitch_x(self) -> f32 {
         self.frame.x + FRAME_GAP
     }
@@ -107,6 +120,23 @@ impl Metrics {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fitted_frames_fill_the_row_with_the_preset_column_count() {
+        for inner in [1290.0_f32, 1734.0, 2214.0, 3474.0] {
+            let preset = Metrics::new(1.0);
+            let fitted = Metrics::fitted(1.0, inner);
+            let columns = fitted.columns(inner);
+            assert_eq!(columns, preset.columns(inner), "width {inner}");
+            let used = fitted.row_width(columns);
+            assert!(
+                used <= inner && inner - used < columns as f32,
+                "width {inner}: {used}"
+            );
+            assert!(fitted.frame.x >= preset.frame.x);
+        }
+        assert_eq!(Metrics::fitted(1.0, 50.0).columns(50.0), 1);
+    }
 
     #[test]
     fn thumbnail_sizes_cycle_from_the_nearest_preset() {

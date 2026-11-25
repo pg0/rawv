@@ -1,10 +1,12 @@
 //! Full-resolution image loading for the viewer.
 
 use std::path::Path;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
 use super::MediaError;
+use super::animation;
 use super::developed::DevelopedCache;
 use super::formats::{self, Kind};
 use super::orientation::Orientation;
@@ -94,6 +96,10 @@ pub struct FullImage {
     pub cached: bool,
     /// The rating stored in the file.
     pub rating: Rating,
+    /// How long each frame of an animation is shown, `pixels` first; empty for a still picture.
+    pub delays: Vec<Duration>,
+    /// The frames of an animation after `pixels`, the same size.
+    pub later_frames: Vec<Pixels>,
 }
 
 pub fn load_full(
@@ -104,6 +110,11 @@ pub fn load_full(
     slot: Option<DevelopSlot<'_>>,
 ) -> Result<FullImage, MediaError> {
     let mut cached = false;
+    if kind == Kind::Bitmap
+        && let Some(animation) = animation::decode(path, max_side)?
+    {
+        return animated(animation);
+    }
     let (pixels, probe, source, raw_orientation) = match kind {
         Kind::Jpeg => {
             let data = std::fs::read(path)?;
@@ -178,6 +189,34 @@ pub fn load_full(
         shot: probe.shot,
         source,
         cached,
+        delays: Vec::new(),
+        later_frames: Vec::new(),
+    })
+}
+
+/// A GIF or WebP file; with one frame it is a still picture.
+fn animated(animation: animation::Animation) -> Result<FullImage, MediaError> {
+    let mut frames = animation.frames.into_iter();
+    let first = frames
+        .next()
+        .ok_or_else(|| MediaError::new("the file holds no picture"))?;
+    let (later_frames, later_delays): (Vec<Pixels>, Vec<Duration>) =
+        frames.map(|frame| (frame.pixels, frame.delay)).unzip();
+    let delays = if later_frames.is_empty() {
+        Vec::new()
+    } else {
+        std::iter::once(first.delay).chain(later_delays).collect()
+    };
+    Ok(FullImage {
+        pixels: first.pixels,
+        original_size: animation.original_size,
+        orientation: Orientation::default(),
+        shot: ShotInfo::default(),
+        source: Source::Bitmap,
+        cached: false,
+        rating: 0,
+        delays,
+        later_frames,
     })
 }
 

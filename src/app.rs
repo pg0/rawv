@@ -9,7 +9,7 @@ use egui::{
 };
 
 use crate::command::{self, Command, Direction, Mode};
-use crate::config::{self, Config, WheelAction, WindowGeometry};
+use crate::config::{self, ArrowAction, Config, WheelAction, WindowGeometry};
 use crate::filework::{Done, FileWorker, Job, Outcome};
 use crate::gallery::{Gallery, GalleryContext, layout};
 use crate::library::lister::{ListResult, Lister};
@@ -515,16 +515,21 @@ impl App {
             Command::Prev => self.step_viewer(-1),
             Command::First => self.with_viewer(|viewer| viewer.go_to(0)),
             Command::Last => self.with_viewer(|viewer| viewer.go_to(usize::MAX)),
-            Command::Pan(direction) => {
-                let moved = self
-                    .viewer
-                    .as_mut()
-                    .is_some_and(|viewer| viewer.pan_step(direction));
-                match direction {
+            Command::Arrow(direction) => {
+                let moved = self.config.arrows == ArrowAction::Move
+                    && self
+                        .viewer
+                        .as_mut()
+                        .is_some_and(|viewer| viewer.pan_step(direction));
+                match (direction, self.config.arrows) {
                     _ if moved => {}
-                    Direction::Left => self.step_viewer(-1),
-                    Direction::Right => self.step_viewer(1),
-                    Direction::Up | Direction::Down => {}
+                    (Direction::Left, _) | (Direction::Up, ArrowAction::Step) => {
+                        self.step_viewer(-1);
+                    }
+                    (Direction::Right, _) | (Direction::Down, ArrowAction::Step) => {
+                        self.step_viewer(1);
+                    }
+                    (Direction::Up | Direction::Down, ArrowAction::Move) => {}
                 }
             }
             Command::ZoomIn => self.with_viewer(|viewer| viewer.zoom_step(true)),
@@ -555,6 +560,7 @@ impl App {
                     WheelAction::Step => "Wheel steps \u{b7} Ctrl+Wheel zooms",
                 });
             }
+            Command::ToggleArrowAction => self.config.arrows = self.config.arrows.toggled(),
             Command::ToggleHelp => {
                 self.help = !self.help;
                 self.settings = false;
@@ -730,6 +736,8 @@ impl App {
                 "cached": loaded.map(|loaded| loaded.cached),
                 "size": loaded.map(|loaded| loaded.original_size),
                 "load_ms": loaded.map(|loaded| loaded.load_ms),
+                "frames": loaded.map(|loaded| loaded.frames.len().max(1)),
+                "frame": viewer.shown_frame(),
                 "orientation": orientation,
                 "rating": entry.map(|entry| self.rating_of(entry)),
             })
@@ -775,6 +783,7 @@ impl App {
             "sort": format!("{:?}", self.gallery.sort),
             "nested": self.gallery.nested,
             "wheel": format!("{:?}", self.config.wheel),
+            "arrows": format!("{:?}", self.config.arrows),
             "raw": format!("{:?}", self.config.raw),
             "rolls": rolls,
             "viewer": viewer,
@@ -864,6 +873,12 @@ impl App {
                 self.config.wheel.label(),
                 "W",
                 Command::ToggleWheelAction,
+            ),
+            (
+                "Arrow keys in viewer",
+                self.config.arrows.label(),
+                "",
+                Command::ToggleArrowAction,
             ),
             (
                 "RAW files",

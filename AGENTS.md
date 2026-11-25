@@ -92,7 +92,9 @@ The executables link the C runtime statically (`.cargo/config.toml`) and need no
 
 ## Known limits
 
-- HEIC, AVIF and JPEG XL are not decoded. No colour management. Animated GIFs show the first frame.
+- HEIC, AVIF and JPEG XL are not decoded. No colour management. Animated GIF and WebP files play in the viewer
+  (`media/animation.rs`); one whose frames need more than 256 MB shows its first frame, and
+  gallery thumbnails always show the first frame.
 - Files without an EXIF orientation value (PNG, plain JPEG) and RAW containers that are not
   TIFF-based (CR3, RAF) rotate for the session only.
 - Dragging an image out of the window is checked by `verify.py` only up to the point where

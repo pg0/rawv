@@ -6,6 +6,7 @@ A fast, minimal photo and RAW viewer for Windows. One executable, no installer.
 - **Viewer**: instant stepping with preloading, zoom at the pointer, fullscreen.
 - **RAW**: shows the camera's embedded preview at once and, where that is small, the
   developed sensor data in full size. Developed images are cached on the computer.
+- **Animated GIF and WebP** play in the viewer.
 - **Drag out**: drag an image from the gallery into another program or the browser.
 - **Rate, reject, rotate, delete**: stars and the reject mark are saved inside the photo file,
   rotation rewrites the EXIF orientation only, Delete moves the file to the recycle bin.
@@ -45,7 +46,7 @@ rawv --fullscreen ...
 | Key | Does |
 |---|---|
 | Space, Page Up / Down, Ctrl+Wheel | next / previous image |
-| Arrows | move a zoomed-in image; when it fits, Left / Right step |
+| Arrows | move a zoomed-in image; when it fits, Left / Right step (settings: always step) |
 | Wheel, `+` `-` | zoom (`W` swaps wheel and Ctrl+wheel) |
 | `*` / `/` | fit to window / 100 % |
 | `F`, double click | fullscreen |

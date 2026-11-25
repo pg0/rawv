@@ -28,7 +28,7 @@ SECOND_ROLL_TITLE = "60,299"
 CENTER = "750,475"
 NEXT_BUTTON = "1465,475"
 CLOSE_BUTTON = "1469,31"
-CLEAR_CACHES_BUTTON = "803,460"
+CLEAR_CACHES_BUTTON = "803,477"
 
 failures = []
 
@@ -493,12 +493,14 @@ def keyboard(session):
         *["key:ArrowRight"] * 20, "dump",
         "zoom-fit", "key:ArrowRight", "dump", "key:ArrowLeft", "dump", "key:ArrowDown", "dump",
         "key:PageDown", "dump", "key:PageUp", "dump", "key:Space", "dump",
+        "arrow-action", "zoom-actual", "key:ArrowDown", "dump", "key:ArrowUp", "dump",
         "quit",
     ])
-    check("keyboard: all state dumps arrive", len(states) == 11, f"got {len(states)}")
-    if len(states) != 11:
+    check("keyboard: all state dumps arrive", len(states) == 13, f"got {len(states)}")
+    if len(states) != 13:
         return
-    actual, right, down, left, edge, fit_right, fit_left, fit_down, page_down, page_up, space = states
+    (actual, right, down, left, edge, fit_right, fit_left, fit_down, page_down, page_up, space,
+     step_down, step_up) = states
     view = actual["viewer"]
     check("keyboard: a 24 MP JPEG at 100 %", view["name"] == "IMG_0001.JPG" and abs(view["zoom_percent"] - 100) < 0.01, str(view))
     start = view["pan"]
@@ -516,6 +518,9 @@ def keyboard(session):
     check("keyboard: Page Down, Page Up and Space step",
           page_down["viewer"]["index"] == 6 and page_up["viewer"]["index"] == 5 and space["viewer"]["index"] == 6,
           f'{page_down["viewer"]["index"]} {page_up["viewer"]["index"]} {space["viewer"]["index"]}')
+    check("keyboard: set to step, arrows step even when zoomed in",
+          step_down["arrows"] == "Step" and step_down["viewer"]["index"] == 7 and step_up["viewer"]["index"] == 6,
+          f'{step_down["arrows"]} {step_down["viewer"]["index"]} {step_up["viewer"]["index"]}')
 
 
 def caches(session):
@@ -627,6 +632,37 @@ def register(session):
         check("icon: rawv.exe carries the rawv icon", False, str(error))
 
 
+def animation(session):
+    from PIL import Image
+    folder = session.work / "gifs"
+    folder.mkdir()
+    colors = [(220, 40, 40), (40, 200, 60), (40, 80, 230), (240, 220, 40), (200, 40, 200), (40, 220, 220)]
+    frames = [Image.new("RGB", (640, 400), color) for color in colors]
+    frames[0].save(folder / "a_moving.gif", save_all=True, append_images=frames[1:], duration=150, loop=0)
+    frames[0].save(folder / "b_still.gif")
+    shot = session.work / "frame.png"
+    states = session.run(folder / "a_moving.gif", [
+        "dump", "pause:400", "dump", "pause:400", "dump", f"shot:{shot}", "next", "dump", "pause:400", "dump", "quit",
+    ])
+    check("animation: five state dumps", len(states) == 5, f"got {len(states)}")
+    if len(states) != 5:
+        return
+    first, later, latest, still, still_later = (state["viewer"] for state in states)
+    check("animation: all frames of an animated GIF load", first["name"] == "a_moving.gif" and first["frames"] == 6, str(first))
+    shown = [first["frame"], later["frame"], latest["frame"]]
+    check("animation: the frames play one after the other", len(set(shown)) == 3, str(shown))
+    if shot.exists():
+        image = Image.open(shot).convert("RGB")
+        center = image.getpixel((image.width // 2, image.height // 2))
+        check("animation: the window shows a frame of the GIF",
+              any(sum(abs(a - b) for a, b in zip(center, color)) < 30 for color in colors), str(center))
+    else:
+        check("animation: the window shows a frame of the GIF", False, "no screenshot")
+    check("animation: a single-frame GIF stays still",
+          still["name"] == "b_still.gif" and still["frames"] == 1 and still["frame"] == 0 and still_later["frame"] == 0,
+          str(still))
+
+
 SESSIONS = {
     "gallery": gallery,
     "viewer": viewer,
@@ -642,6 +678,7 @@ SESSIONS = {
     "keyboard": keyboard,
     "caches": caches,
     "register": register,
+    "animation": animation,
 }
 
 

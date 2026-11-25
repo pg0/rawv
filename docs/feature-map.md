@@ -46,10 +46,12 @@ User-facing feature, where it lives, and the script word that triggers it
 | Fit / 100 % | `Viewer::zoom_fit`, `Viewer::zoom_actual` | `zoom-fit` `zoom-actual`, `*`, `/`, middle click switches |
 | Wheel zooms or steps | `Command::ToggleWheelAction`, `Viewer::handle_wheel` | `wheel-action`, `W` |
 | Pan | `Viewer::ui` | drag |
-| Pan with the keyboard; when the image fits, Left / Right step | `Command::Pan`, `Viewer::pan_step` | `pan-left` `pan-right` `pan-up` `pan-down`, `key:ArrowRight`, arrow keys |
+| Pan with the keyboard; when the image fits, Left / Right step | `Command::Arrow`, `Viewer::pan_step` | `arrow-left` `arrow-right` `arrow-up` `arrow-down`, `key:ArrowRight`, arrow keys |
+| Arrow keys move or always step | `Command::ToggleArrowAction`, `Config::arrows` | `arrow-action`, settings panel |
 | RAW: camera preview, automatic or developed | `Command::CycleRawMode`, `Viewer::renditions` | `raw-mode`, `P` |
 | Camera preview shown until the developed image is ready | `Viewer::shown` | automatic |
 | Developed RAW images cached on this computer | `media::developed`, `Command::CycleRawCache` | `raw-cache`, settings panel |
+| Animated GIF and WebP play | `media::animation`, `Loaded::frame_at` | automatic |
 | Info line | `Viewer::paint_info` | `info`, `I` |
 | Neighbour preloading | `Viewer::wanted`, `FullLoader` | automatic |
 | Back to gallery | `App::close_viewer` | `escape`, Esc, Enter, close button |

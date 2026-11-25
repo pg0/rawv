@@ -11,7 +11,7 @@ use egui::{Color32, Event, MouseWheelUnit, Pos2, Rect, Sense, Stroke, TextureId,
 use crate::command::{Command, Direction};
 use crate::config::WheelAction;
 use crate::draw;
-use crate::library::listing::ImageEntry;
+use crate::library::listing::{FileId, ImageEntry};
 use crate::media::formats::Kind;
 use crate::media::load::{RawMode, Rendition, Source};
 use crate::media::orientation::Orientation;
@@ -54,6 +54,10 @@ pub struct Viewer {
     slack: Vec2,
     /// Size of the view in the last frame.
     view: Vec2,
+    /// The file whose animation plays, and the interface time it started at.
+    animation_start: Option<(FileId, f64)>,
+    /// The animation frame shown last, 0 for a still picture.
+    shown_frame: usize,
     direction: isize,
     wheel: f32,
     /// Zoom factor used in the last frame, the base for relative zoom commands.
@@ -80,6 +84,9 @@ struct Picture {
     content: ContentRect,
     /// False while a thumbnail or camera preview stands in for the image.
     full: bool,
+    /// The animation frame shown, and how long until the next one.
+    frame: usize,
+    next_frame_in: Option<std::time::Duration>,
 }
 
 impl Viewer {
@@ -99,6 +106,8 @@ impl Viewer {
             pan: Vec2::ZERO,
             slack: Vec2::ZERO,
             view: Vec2::ZERO,
+            animation_start: None,
+            shown_frame: 0,
             direction: 1,
             wheel: 0.0,
             shown_factor: 1.0,
@@ -320,7 +329,22 @@ impl Viewer {
             return commands;
         };
         let state = self.final_state(cx.loader);
-        let picture = self.picture(&entry, cx);
+        let now = ui.input(|input| input.time);
+        let started = match &self.animation_start {
+            Some((id, started)) if *id == entry.id => *started,
+            _ => {
+                self.animation_start = Some((entry.id.clone(), now));
+                now
+            }
+        };
+        let elapsed = std::time::Duration::from_secs_f64((now - started).max(0.0));
+        let picture = self.picture(&entry, cx, elapsed);
+        if let Some(picture) = &picture {
+            self.shown_frame = picture.frame;
+            if let Some(wait) = picture.next_frame_in {
+                ui.ctx().request_repaint_after(wait);
+            }
+        }
 
         let pixels_per_point = ui.ctx().pixels_per_point();
         if let Some(picture) = &picture {
@@ -402,18 +426,31 @@ impl Viewer {
             .unwrap_or(0)
     }
 
-    fn picture(&self, entry: &ImageEntry, cx: &ViewerContext<'_>) -> Option<Picture> {
+    /// The animation frame shown last, 0 for a still picture.
+    pub fn shown_frame(&self) -> usize {
+        self.shown_frame
+    }
+
+    fn picture(
+        &self,
+        entry: &ImageEntry,
+        cx: &ViewerContext<'_>,
+        elapsed: std::time::Duration,
+    ) -> Option<Picture> {
         if let Some((loaded, wanted)) = self.shown(cx.loader) {
             let orientation = cx
                 .orientations
                 .effective(&entry.id.path, loaded.orientation);
             let size = draw::shown_size(loaded.original_size, orientation, ContentRect::FULL);
+            let (texture, frame, next_frame_in) = loaded.frame_at(elapsed);
             return Some(Picture {
-                texture: loaded.texture.id(),
+                texture: texture.id(),
                 size: Vec2::from(size),
                 orientation,
                 content: ContentRect::FULL,
                 full: wanted,
+                frame,
+                next_frame_in,
             });
         }
         let thumb = cx.thumbs.peek(&entry.id)?;
@@ -425,6 +462,8 @@ impl Viewer {
             orientation,
             content: thumb.content,
             full: false,
+            frame: 0,
+            next_frame_in: None,
         })
     }
 

@@ -50,7 +50,7 @@ impl Gallery {
             commands.push(Command::ScaleThumbs(zoom));
         }
 
-        let metrics = Metrics::new(self.thumb_scale);
+        let thumb_scale = self.thumb_scale;
         let reveal_selection = std::mem::take(&mut self.reveal_selection);
         let selection = self.selection;
         let generation = self.generation;
@@ -66,6 +66,7 @@ impl Gallery {
                 - layout::META_WIDTH
                 - layout::META_GAP
                 - 2.0 * layout::STRIP_PAD_X;
+            let metrics = Metrics::fitted(thumb_scale, strip_inner);
             columns = metrics.columns(strip_inner);
 
             for (index, roll) in self.rolls.iter_mut().enumerate() {

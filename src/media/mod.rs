@@ -1,5 +1,6 @@
 //! Reading image files: metadata probing, decoding, thumbnails and orientation.
 
+pub mod animation;
 pub mod developed;
 pub mod formats;
 pub mod load;

@@ -66,6 +66,32 @@ impl WheelAction {
     }
 }
 
+/// What the arrow keys do in the viewer.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub enum ArrowAction {
+    /// Move a zoomed-in image; where it fits, Left and Right step.
+    #[default]
+    Move,
+    /// Always go to the previous (Left, Up) or next (Right, Down) image.
+    Step,
+}
+
+impl ArrowAction {
+    pub fn toggled(self) -> Self {
+        match self {
+            Self::Move => Self::Step,
+            Self::Step => Self::Move,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Move => "Move zoomed image",
+            Self::Step => "Next / previous",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -76,6 +102,7 @@ pub struct Config {
     /// Show every nested subfolder as a roll, not only the direct ones.
     pub nested: bool,
     pub wheel: WheelAction,
+    pub arrows: ArrowAction,
     pub raw: RawMode,
     /// Size limit of the developed RAW cache in gigabytes; 0 turns it off.
     pub raw_cache_gb: u32,
@@ -91,6 +118,7 @@ impl Default for Config {
             show_info: true,
             nested: false,
             wheel: WheelAction::default(),
+            arrows: ArrowAction::default(),
             raw: RawMode::default(),
             raw_cache_gb: 20,
             window: None,

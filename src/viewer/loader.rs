@@ -4,11 +4,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use egui::TextureHandle;
 
 use crate::library::listing::{FileId, ImageEntry};
+use crate::media::MediaError;
 use crate::media::developed::DevelopedCache;
 use crate::media::formats::Kind;
 use crate::media::load::{self, DevelopSlot, FullImage, Rendition, Source};
@@ -55,6 +56,28 @@ pub struct Loaded {
     /// The rating stored in the file when it was loaded.
     pub rating: Rating,
     pub load_ms: f32,
+    /// Every frame of an animation with how long it shows, `texture` first; empty for a
+    /// still picture.
+    pub frames: Vec<(TextureHandle, Duration)>,
+}
+
+impl Loaded {
+    /// The frame shown `elapsed` after the animation started, its number, and how long
+    /// it stays. A still picture is frame 0 for ever.
+    pub fn frame_at(&self, elapsed: Duration) -> (&TextureHandle, usize, Option<Duration>) {
+        let total: Duration = self.frames.iter().map(|(_, delay)| *delay).sum();
+        if total.is_zero() {
+            return (&self.texture, 0, None);
+        }
+        let mut left = Duration::from_nanos((elapsed.as_nanos() % total.as_nanos()) as u64);
+        for (index, (texture, delay)) in self.frames.iter().enumerate() {
+            if left < *delay {
+                return (texture, index, Some(*delay - left));
+            }
+            left -= *delay;
+        }
+        (&self.texture, 0, None)
+    }
 }
 
 enum Slot {
@@ -118,17 +141,8 @@ impl FullLoader {
         self.max_side.store(max_side, Ordering::Relaxed);
         for (key, result) in self.pool.poll() {
             let slot = match result {
-                Ok((image, load_ms)) => match image.pixels.fit_within(max_side) {
-                    Ok(pixels) => Slot::Ready(Loaded {
-                        texture: texture::upload(ctx, "image", pixels),
-                        original_size: image.original_size,
-                        orientation: image.orientation,
-                        shot: image.shot,
-                        source: image.source,
-                        cached: image.cached,
-                        rating: image.rating,
-                        load_ms,
-                    }),
+                Ok((image, load_ms)) => match upload(ctx, image, max_side, load_ms) {
+                    Ok(loaded) => Slot::Ready(loaded),
                     Err(error) => Slot::Failed(error.to_string()),
                 },
                 Err(message) => Slot::Failed(message),
@@ -148,4 +162,34 @@ impl FullLoader {
     pub fn is_idle(&self) -> bool {
         self.pool.is_idle()
     }
+}
+
+/// Puts a decoded image and the further frames of an animation on the graphics card.
+fn upload(
+    ctx: &egui::Context,
+    image: FullImage,
+    max_side: u32,
+    load_ms: f32,
+) -> Result<Loaded, MediaError> {
+    let texture = texture::upload(ctx, "image", image.pixels.fit_within(max_side)?);
+    let mut textures = vec![texture.clone()];
+    for frame in image.later_frames {
+        textures.push(texture::upload(ctx, "frame", frame.fit_within(max_side)?));
+    }
+    let frames = if image.delays.len() == textures.len() && textures.len() > 1 {
+        textures.into_iter().zip(image.delays).collect()
+    } else {
+        Vec::new()
+    };
+    Ok(Loaded {
+        texture,
+        original_size: image.original_size,
+        orientation: image.orientation,
+        shot: image.shot,
+        source: image.source,
+        cached: image.cached,
+        rating: image.rating,
+        load_ms,
+        frames,
+    })
 }

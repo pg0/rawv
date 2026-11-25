@@ -58,9 +58,10 @@ pub enum Command {
     Prev,
     First,
     Last,
-    /// Moves a zoomed-in image by a step, to show more of it in that direction. Where the
-    /// image fits the window that way, Left and Right step to the previous or next image.
-    Pan(Direction),
+    /// An arrow key in the viewer: moves a zoomed-in image or steps, as `Config::arrows` says.
+    Arrow(Direction),
+    /// Switches what the arrow keys do in the viewer.
+    ToggleArrowAction,
     ZoomIn,
     ZoomOut,
     ZoomFit,
@@ -144,10 +145,10 @@ const CONFIRM: Option<Mode> = Some(Mode::Confirm);
 
 #[rustfmt::skip]
 const BINDINGS: &[Binding] = &[
-    bind(NONE, Key::ArrowRight, VIEWER, || Command::Pan(Direction::Right), Some(("Arrows", "Move a zoomed-in image; else Left / Right step"))),
-    bind(NONE, Key::ArrowLeft, VIEWER, || Command::Pan(Direction::Left), None),
-    bind(NONE, Key::ArrowUp, VIEWER, || Command::Pan(Direction::Up), None),
-    bind(NONE, Key::ArrowDown, VIEWER, || Command::Pan(Direction::Down), None),
+    bind(NONE, Key::ArrowRight, VIEWER, || Command::Arrow(Direction::Right), Some(("Arrows", "Move a zoomed-in image or step (see settings)"))),
+    bind(NONE, Key::ArrowLeft, VIEWER, || Command::Arrow(Direction::Left), None),
+    bind(NONE, Key::ArrowUp, VIEWER, || Command::Arrow(Direction::Up), None),
+    bind(NONE, Key::ArrowDown, VIEWER, || Command::Arrow(Direction::Down), None),
     bind(NONE, Key::Space, VIEWER, || Command::Next, Some(("Space / Page Down", "Next image"))),
     bind(NONE, Key::PageDown, VIEWER, || Command::Next, None),
     bind(NONE, Key::Backspace, VIEWER, || Command::Prev, Some(("Backspace / Page Up", "Previous image"))),
@@ -288,10 +289,10 @@ pub fn parse(text: &str) -> Option<Command> {
         ("sort", None) => Command::CycleSort,
         ("next", None) => Command::Next,
         ("prev", None) => Command::Prev,
-        ("pan-left", None) => Command::Pan(Direction::Left),
-        ("pan-right", None) => Command::Pan(Direction::Right),
-        ("pan-up", None) => Command::Pan(Direction::Up),
-        ("pan-down", None) => Command::Pan(Direction::Down),
+        ("arrow-left", None) => Command::Arrow(Direction::Left),
+        ("arrow-right", None) => Command::Arrow(Direction::Right),
+        ("arrow-up", None) => Command::Arrow(Direction::Up),
+        ("arrow-down", None) => Command::Arrow(Direction::Down),
         ("first", None) => Command::First,
         ("last", None) => Command::Last,
         ("zoom-in", None) => Command::ZoomIn,
@@ -303,6 +304,7 @@ pub fn parse(text: &str) -> Option<Command> {
         ("clear-caches", None) => Command::ClearCaches,
         ("info", None) => Command::ToggleInfo,
         ("wheel-action", None) => Command::ToggleWheelAction,
+        ("arrow-action", None) => Command::ToggleArrowAction,
         ("help", None) => Command::ToggleHelp,
         ("settings", None) => Command::ToggleSettings,
         ("rotate-cw", None) => Command::RotateCw,
