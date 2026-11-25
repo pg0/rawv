@@ -28,13 +28,13 @@ input of the person at the computer.
 
 ## Release
 
-The version stays 0.1 (`0.1.0` in `Cargo.toml`, tag `v0.1`) whatever changes, until the owner
-asks for a new release. A release is `dist/rawv-windows-x64.zip` with both executables and the
+The version stays 0.1.1 (`Cargo.toml`, tag `v0.1.1`) whatever changes, until the owner asks
+for a new release; then both change together and a new GitHub release is made. A release is `dist/rawv-windows-x64.zip` with both executables and the
 README, attached to the GitHub release:
 
 ```
 cargo build --release && python tools/package.py      # writes dist/rawv-windows-x64.zip
-gh release upload v0.1 dist/rawv-windows-x64.zip --clobber
+gh release upload v0.1.1 dist/rawv-windows-x64.zip --clobber
 ```
 
 The executables link the C runtime statically (`.cargo/config.toml`) and need nothing installed.
@@ -90,6 +90,8 @@ The executables link the C runtime statically (`.cargo/config.toml`) and need no
 - HEIC, AVIF and JPEG XL are not decoded. No colour management. Animated GIFs show the first frame.
 - Files without an EXIF orientation value (PNG, plain JPEG) and RAW containers that are not
   TIFF-based (CR3, RAF) rotate for the session only.
+- Dragging an image out of the window is checked by `verify.py` only up to the point where
+  the file is handed to the system; a scripted run does not start the system's drag.
 - `verify.py` leaves one small PNG per run in the Windows recycle bin.
 - Ratings cannot be stored in PNG and other bitmap files, nor in RAW files that are neither
   Sony nor DNG and bring no XMP packet. The EXIF rating tag Windows uses (0x4746) is not

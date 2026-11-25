@@ -3,7 +3,7 @@
 //! Each step runs once the app has settled (nothing loading), so a script exercises the
 //! real interface deterministically. Steps are command words (see `command::parse`),
 //! `shot:FILE.png`, and pointer input in window points: `click:X,Y`, `double-click:X,Y`,
-//! `middle-click:X,Y`, `move:X,Y`, `drag:X1,Y1,X2,Y2`, `wheel:LINES`, `ctrl-wheel:LINES`.
+//! `middle-click:X,Y`, `right-click:X,Y`, `move:X,Y`, `drag:X1,Y1,X2,Y2`, `wheel:LINES`, `ctrl-wheel:LINES`.
 //! `drop:PATH` drops a file or folder onto the window. `type:TEXT` types text.
 //! `dump:FILE` appends the app state as one JSON line, for assertions. `pause:MS` lets
 //! time pass, as a person would between two separate double clicks.
@@ -166,6 +166,7 @@ fn parse_step(word: &str) -> Result<Step, String> {
         "move" => Step::Input(vec![vec![Event::PointerMoved(point()?)]]),
         "click" => Step::Input(click(point()?, PointerButton::Primary)),
         "middle-click" => Step::Input(click(point()?, PointerButton::Middle)),
+        "right-click" => Step::Input(click(point()?, PointerButton::Secondary)),
         "double-click" => {
             let position = point()?;
             let mut frames = click(position, PointerButton::Primary);

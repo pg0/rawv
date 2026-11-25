@@ -1,6 +1,6 @@
 [package]
 name = "rawv"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 default-run = "rawv"
 
@@ -8,6 +8,7 @@ default-run = "rawv"
 bytemuck = { version = "1.25.2", features = ["extern_crate_alloc"] }
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 dirs = "7.0.0"
+drag = "2.1.1"
 eframe = { version = "0.37.0", default-features = false, features = ["glow", "default_fonts"] }
 egui = "0.37.0"
 fast_image_resize = "6.2.0"

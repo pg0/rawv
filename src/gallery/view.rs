@@ -389,12 +389,12 @@ impl RollView<'_> {
         entry: &ImageEntry,
         index: usize,
         cx: &mut GalleryContext<'_>,
-    ) -> Option<Command> {
+    ) -> Vec<Command> {
         let response = ui
             .interact(
                 frame,
                 ui.scope_id().with(("frame", self.index, index)),
-                Sense::click(),
+                Sense::click_and_drag(),
             )
             .on_hover_text(&entry.name);
         let painter = ui.painter();
@@ -477,10 +477,27 @@ impl RollView<'_> {
             theme::mono(10.0),
             theme::MUTED,
         );
-        response.clicked().then_some(Command::OpenImage {
-            roll: self.index,
-            index,
-        })
+        let (roll, index) = (self.index, index);
+        let mut commands = Vec::new();
+        if response.secondary_clicked() {
+            commands.push(Command::SelectImage { roll, index });
+        }
+        response.context_menu(|ui| {
+            if ui.button("Open in default app").clicked() {
+                commands.push(Command::OpenExternally);
+                ui.close();
+            }
+            if ui.button("Show in folder").clicked() {
+                commands.push(Command::ShowInFolder);
+                ui.close();
+            }
+        });
+        if response.drag_started() {
+            commands.push(Command::DragOut { roll, index });
+        } else if response.clicked() {
+            commands.push(Command::OpenImage { roll, index });
+        }
+        commands
     }
 }
 

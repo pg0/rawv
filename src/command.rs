@@ -31,6 +31,21 @@ pub enum Command {
         index: usize,
     },
     ToggleRoll(usize),
+    /// Selects image `index` of roll `roll` in the gallery.
+    SelectImage {
+        roll: usize,
+        index: usize,
+    },
+    /// Opens the viewed or selected image in the program Windows uses for its file type.
+    OpenExternally,
+    /// Shows the viewed or selected image's file in Explorer.
+    ShowInFolder,
+    /// Starts dragging image `index` of roll `roll` out of the window, to drop its file
+    /// into another program.
+    DragOut {
+        roll: usize,
+        index: usize,
+    },
     ToggleAllRolls,
     /// Switches between rolls for direct subfolders and rolls for every nested subfolder.
     ToggleNested,
@@ -256,6 +271,8 @@ pub fn parse(text: &str) -> Option<Command> {
         ("select-first", None) => Command::SelectFirst,
         ("select-last", None) => Command::SelectLast,
         ("open-selected", None) => Command::OpenSelected,
+        ("open-externally", None) => Command::OpenExternally,
+        ("show-in-folder", None) => Command::ShowInFolder,
         ("toggle-all", None) => Command::ToggleAllRolls,
         ("nested", None) => Command::ToggleNested,
         ("thumbs-larger", None) => Command::ScaleThumbs(1.15),

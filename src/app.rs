@@ -15,6 +15,7 @@ use crate::gallery::{Gallery, GalleryContext, layout};
 use crate::library::lister::{ListResult, Lister};
 use crate::library::listing::ImageEntry;
 use crate::media::developed::DevelopedCache;
+use crate::media::pixels::{self, Channels};
 use crate::media::rate::RateOutcome;
 use crate::media::remove::Removal;
 use crate::media::rotate::RotateOutcome;
@@ -32,6 +33,7 @@ use crate::viewer::{Viewer, ViewerContext};
 const HEADER_HEIGHT: f32 = 44.0;
 const TOAST_SECONDS: f64 = 2.2;
 const MAX_BREADCRUMBS: usize = 5;
+const DRAG_PICTURE_LONG_EDGE: u32 = 160;
 
 pub struct Startup {
     /// Folder or file given on the command line.
@@ -63,6 +65,17 @@ pub struct App {
     loader: FullLoader,
     developed: DevelopedCache,
     files: FileWorker,
+    /// For the picture that follows the pointer while an image is dragged out.
+    thumb_store: ThumbStore,
+    /// The image to drag out of the window once this frame's commands have run.
+    drag_out: Option<ImageEntry>,
+    /// What was last given to Explorer, and which file.
+    handed_over: Option<(String, PathBuf)>,
+    /// The file last dragged out. Dropping it back onto this window does nothing.
+    dragged_out: Option<PathBuf>,
+    /// Where the pointer was when the system took the mouse for a drag. The release of
+    /// the button never reaches the interface and is made up for from here.
+    pointer_taken: Option<egui::Pos2>,
     orientations: Orientations,
     ratings: Ratings,
     gallery: Gallery,
@@ -95,7 +108,12 @@ impl App {
             lister: Lister::new(repaint.clone()),
             loader: FullLoader::new(repaint.clone(), developed.clone()),
             developed,
-            files: FileWorker::new(store, repaint.clone()),
+            files: FileWorker::new(store.clone(), repaint.clone()),
+            thumb_store: store,
+            drag_out: None,
+            handed_over: None,
+            dragged_out: None,
+            pointer_taken: None,
             orientations: Orientations::default(),
             ratings: Ratings::default(),
             gallery: Gallery::new(config.sort, config.thumb_scale, config.nested),
@@ -260,6 +278,56 @@ impl App {
         self.files.submit(entry, Job::Rotate(rotated));
     }
 
+    /// Hands `entry`'s file to the system as a drag in progress, so it can be dropped into
+    /// another program. Returns when the user has dropped it or given up.
+    fn start_drag_out(&mut self, frame: &eframe::Frame, ctx: &egui::Context, entry: &ImageEntry) {
+        self.dragged_out = Some(entry.id.path.clone());
+        // A scripted run has no mouse button held: the system would drop the file at once,
+        // wherever the real pointer happens to be.
+        if self.script.is_some() {
+            return;
+        }
+        let pointer = ctx.pointer_latest_pos().unwrap_or_default();
+        let picture = self
+            .thumb_store
+            .get(&entry.id.cache_key())
+            .and_then(|stored| drag_picture(&stored.jpeg))
+            .unwrap_or_default();
+        let started = drag::start_drag(
+            frame,
+            drag::DragItem::Files(vec![entry.id.path.clone()]),
+            drag::Image::Raw(picture),
+            |_, _| {},
+            drag::Options::default(),
+        );
+        self.pointer_taken = Some(pointer);
+        if let Err(error) = started {
+            self.say(format!("Cannot drag {}: {error}", entry.name));
+        }
+    }
+
+    /// Starts Explorer with `options` and the viewed or selected image's path. Without
+    /// options Explorer opens the file in the program set for its type.
+    fn hand_to_explorer(&mut self, done: &str, options: &[&str]) {
+        let Some(entry) = self.target_entry() else {
+            self.say("Select an image first");
+            return;
+        };
+        self.handed_over = Some((done.to_owned(), entry.id.path.clone()));
+        // A scripted run must not open windows on the screen of whoever sits at the computer.
+        if self.script.is_some() {
+            return;
+        }
+        let started = std::process::Command::new("explorer.exe")
+            .args(options)
+            .arg(&entry.id.path)
+            .spawn();
+        match started {
+            Ok(_) => self.say(format!("{} \u{b7} {}", entry.name, done.to_lowercase())),
+            Err(error) => self.say(format!("Cannot start Explorer: {error}")),
+        }
+    }
+
     /// The image a command about "this image" means: the viewed one, else the selected one.
     fn target_entry(&self) -> Option<ImageEntry> {
         match &self.viewer {
@@ -409,6 +477,19 @@ impl App {
                 }
             }
             Command::ToggleRoll(roll) => self.gallery.toggle_roll(roll),
+            Command::SelectImage { roll, index } => self.gallery.select(roll, index),
+            Command::OpenExternally => self.hand_to_explorer("Opened in the default app", &[]),
+            Command::ShowInFolder => self.hand_to_explorer("Shown in its folder", &["/select,"]),
+            Command::DragOut { roll, index } => {
+                if let Some(entry) = self
+                    .gallery
+                    .images_of(roll)
+                    .and_then(|images| images.get(index).cloned())
+                {
+                    self.gallery.select(roll, index);
+                    self.drag_out = Some(entry);
+                }
+            }
             Command::ToggleAllRolls => self.gallery.toggle_all(),
             Command::ToggleNested => {
                 let nested = !self.gallery.nested;
@@ -665,6 +746,8 @@ impl App {
             "help": self.help,
             "settings": self.settings,
             "confirm_remove": self.confirm_remove.as_ref().map(|entry| entry.name.clone()),
+            "dragged_out": self.dragged_out,
+            "handed_over": self.handed_over,
             "show_info": self.config.show_info,
             "toast": self.toast.as_ref().map(|toast| toast.text.clone()),
             "selection": self.gallery.selection,
@@ -970,7 +1053,7 @@ impl App {
 }
 
 impl eframe::App for App {
-    fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.track_window(&ctx);
 
@@ -992,7 +1075,14 @@ impl eframe::App for App {
                 .map(|file| file.path().to_path_buf())
                 .collect()
         });
-        commands.extend(dropped.into_iter().next().map(Command::Open));
+        let pressed_anew = ctx.input(|input| input.pointer.any_pressed());
+        if pressed_anew {
+            self.dragged_out = None;
+        }
+        let dropped = dropped
+            .into_iter()
+            .find(|path| self.dragged_out.as_ref() != Some(path));
+        commands.extend(dropped.map(Command::Open));
         let idle = self.is_idle();
         match self
             .script
@@ -1048,12 +1138,24 @@ impl eframe::App for App {
         self.publish_wanted();
         self.update_title(&ctx);
         self.thumbs.end_frame();
+        if let Some(entry) = self.drag_out.take() {
+            self.start_drag_out(frame, &ctx, &entry);
+        }
         self.report_timing();
     }
 
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
         if let Some(script) = &mut self.script {
             script.inject(raw_input);
+        }
+        if let Some(pos) = self.pointer_taken.take() {
+            raw_input.events.push(egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
+            });
+            raw_input.events.push(egui::Event::PointerGone);
         }
     }
 
@@ -1110,6 +1212,13 @@ fn breadcrumbs(ui: &mut Ui, folder: &Path) -> Vec<Command> {
         }
     }
     commands
+}
+
+/// A small JPEG of a thumbnail, to follow the pointer during a drag.
+fn drag_picture(thumbnail_jpeg: &[u8]) -> Option<Vec<u8>> {
+    let pixels = pixels::decode_jpeg(thumbnail_jpeg, Channels::Rgb).ok()?;
+    let small = pixels.fit_within(DRAG_PICTURE_LONG_EDGE).ok()?;
+    pixels::encode_jpeg(&small, 85).ok()
 }
 
 fn header_button(ui: &mut Ui, text: &str, color: Color32, tooltip: &str) -> bool {

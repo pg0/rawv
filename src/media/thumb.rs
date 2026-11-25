@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use super::MediaError;
-use super::formats::Kind;
+use super::formats::{self, Kind};
 use super::orientation::Orientation;
 use super::pixels::{self, Channels, Pixels};
 use super::probe::{Embedded, MediaFile, Probe};
@@ -132,6 +132,9 @@ fn jpeg_thumb(path: &Path, want: ThumbQuality) -> Result<Thumb, MediaError> {
         return Ok(thumb);
     }
     let data = source.read_all()?;
+    if !formats::is_jpeg(&data) {
+        return scaled_thumb(pixels::decode_bitmap(&data)?, Orientation::NORMAL, 0);
+    }
     let pixels = pixels::decode_jpeg(&data, Channels::Rgb)?;
     scaled_thumb(pixels, probe.orientation, probe.rating)
 }

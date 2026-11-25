@@ -334,7 +334,12 @@ impl Viewer {
             );
         }
 
-        let pointer = response.hover_pos();
+        // Asked of the window, not of this view's response: under an edge button the view is
+        // not the hovered widget, and the button would hide itself the frame after it showed.
+        let pointer = ui
+            .ctx()
+            .pointer_hover_pos()
+            .filter(|position| rect.contains(*position));
         if let Some(pointer) = pointer {
             self.pointer_anchor = pointer - rect.center();
         }

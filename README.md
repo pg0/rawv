@@ -6,6 +6,7 @@ A fast, minimal photo and RAW viewer for Windows. One executable, no installer.
 - **Viewer**: instant stepping with preloading, zoom at the pointer, fullscreen.
 - **RAW**: shows the camera's embedded preview at once and, where that is small, the
   developed sensor data in full size. Developed images are cached on the computer.
+- **Drag out**: drag an image from the gallery into another program or the browser.
 - **Rate, reject, rotate, delete**: stars and the reject mark are saved inside the photo file,
   rotation rewrites the EXIF orientation only, Delete moves the file to the recycle bin.
 

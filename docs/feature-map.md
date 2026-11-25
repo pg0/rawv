@@ -27,6 +27,8 @@ User-facing feature, where it lives, and the script word that triggers it
 | Move selection | `Gallery::move_selection` | `left` `right` `up` `down`, arrow keys |
 | Move selection by pages, to first or last image | `Gallery::move_selection`, `Gallery::select_end` | `page-up` `page-down` `select-first` `select-last`, Page Up, Page Down, Home, End |
 | Open image | `Command::OpenImage` | click frame, `open-selected`, `Enter` |
+| Right-click menu: open in the default app, show in folder | `Command::OpenExternally`, `Command::ShowInFolder`, `App::hand_to_explorer` | right click on a frame, `open-externally`, `show-in-folder` |
+| Drag an image's file into another program | `Command::DragOut`, `App::start_drag_out` | drag a frame out of the window |
 | Thumbnail size | `Command::ScaleThumbs` | `thumbs-larger`, `thumbs-smaller`, `+` `-`, Ctrl+wheel |
 | Thumbnail size S / M / L | `Command::CycleThumbSize`, `layout::THUMB_SIZES` | `thumb-size`, `T`, `Size` button |
 | Sort order | `Command::CycleSort` | `sort`, `S`, sort button |

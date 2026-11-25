@@ -145,6 +145,13 @@ pub fn encode_jpeg(pixels: &Pixels, quality: u8) -> Result<Vec<u8>, MediaError> 
     Ok(out)
 }
 
+/// Decodes a PNG, WebP, GIF, BMP or TIFF file held in memory.
+pub fn decode_bitmap(data: &[u8]) -> Result<Pixels, MediaError> {
+    image::load_from_memory(data)
+        .map(from_dynamic)
+        .map_err(MediaError::from_display)
+}
+
 /// Converts any image the `image` crate produced into premultiplied RGBA.
 pub fn from_dynamic(image: image::DynamicImage) -> Pixels {
     let has_alpha = image.color().has_alpha();

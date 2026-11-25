@@ -1,4 +1,4 @@
-//! File type classification by extension.
+//! File type classification by extension, with a look at the content where names lie.
 
 use std::path::Path;
 
@@ -16,6 +16,12 @@ const RAW_EXTENSIONS: &[&str] = &[
 ];
 
 const BITMAP_EXTENSIONS: &[&str] = &["png", "webp", "gif", "bmp", "tif", "tiff"];
+
+/// Whether `head`, the first bytes of a file, begins a JPEG. Files named `.jpg` sometimes
+/// hold a PNG or WebP; those are decoded like the other bitmap formats.
+pub fn is_jpeg(head: &[u8]) -> bool {
+    head.starts_with(&[0xFF, 0xD8])
+}
 
 pub fn kind_of(path: &Path) -> Option<Kind> {
     let ext = path.extension()?.to_str()?.to_ascii_lowercase();

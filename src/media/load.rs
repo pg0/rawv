@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use super::MediaError;
 use super::developed::DevelopedCache;
-use super::formats::Kind;
+use super::formats::{self, Kind};
 use super::orientation::Orientation;
 use super::pixels::{self, Channels, Pixels};
 use super::probe::{self, MediaFile, Probe, ShotInfo};
@@ -107,9 +107,14 @@ pub fn load_full(
     let (pixels, probe, source, raw_orientation) = match kind {
         Kind::Jpeg => {
             let data = std::fs::read(path)?;
-            let probe = probe::probe_jpeg(&data);
-            let pixels = pixels::decode_jpeg(&data, Channels::Rgba)?;
-            (pixels, probe, Source::Jpeg, None)
+            if formats::is_jpeg(&data) {
+                let probe = probe::probe_jpeg(&data);
+                let pixels = pixels::decode_jpeg(&data, Channels::Rgba)?;
+                (pixels, probe, Source::Jpeg, None)
+            } else {
+                let pixels = pixels::decode_bitmap(&data)?;
+                (pixels, Probe::default(), Source::Bitmap, None)
+            }
         }
         Kind::Bitmap => {
             let image = image::ImageReader::open(path)?

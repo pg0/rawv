@@ -21,8 +21,11 @@ CLI = REPO / "target" / "release" / "rawv-cli.exe"
 
 # Window points for a fresh 1500x950 window at thumbnail scale 1.
 FIRST_FRAME = "246,115"
+SECOND_FRAME = "372,115"
 SECOND_ROLL_TITLE = "60,299"
 CENTER = "750,475"
+NEXT_BUTTON = "1465,475"
+CLOSE_BUTTON = "1469,31"
 
 failures = []
 
@@ -81,7 +84,8 @@ def gallery(session):
     states = session.run(session.photos, [
         "dump",
         "right", "right", "down", "dump",
-        "select-first", "dump", "page-down", "dump", "select-last", "dump", "select-first", "right", "right", "down",
+        "select-first", "dump", f"drag:{SECOND_FRAME},700,600", "dump", f"right-click:{SECOND_FRAME}", "show-in-folder", "dump", "escape", "page-down", "dump", "select-last", "dump",
+        "select-first", "right", "right", "down",
         "toggle-all", "dump", "toggle-all", "toggle-all", "dump",
         "sort", "dump", "sort", "sort", "sort",
         "thumb-size", "dump", "thumb-size", "thumb-size",
@@ -91,18 +95,18 @@ def gallery(session):
         "parent", "dump",
         "quit",
     ])
-    check("gallery: thirteen state dumps", len(states) == 13, f"got {len(states)}")
-    if len(states) != 13:
+    check("gallery: fifteen state dumps", len(states) == 15, f"got {len(states)}")
+    if len(states) != 15:
         return
-    first, selected, home, paged, end, expanded, collapsed, sorted_desc, medium, larger, wheel, entered, parent = states
+    first, selected, home, dragged, shown, paged, end, expanded, collapsed, sorted_desc, medium, larger, wheel, entered, parent = states
     titles = [roll["title"] for roll in first["rolls"]]
     counts = [roll["images"] for roll in first["rolls"]]
     check("gallery: folder and subfolders become rolls",
-          titles == ["shoot", "2026-05 Berlin", "2026-06 Wedding", "archive", "empty", "raw only", "small preview"], str(titles))
-    check("gallery: image counts per roll", counts == [15, 40, 14, 0, 0, 6, 1], str(counts))
+          titles == ["shoot", "2026-05 Berlin", "2026-06 Wedding", "archive", "empty", "odd files", "raw only", "small preview"], str(titles))
+    check("gallery: image counts per roll", counts == [15, 40, 14, 0, 0, 1, 6, 1], str(counts))
     check("gallery: natural name order", first["rolls"][0]["first"] == "DSC00000.ARW", first["rolls"][0]["first"])
     check("gallery: only the open folder starts expanded",
-          [roll["expanded"] for roll in first["rolls"]] == [True] + [False] * 6)
+          [roll["expanded"] for roll in first["rolls"]] == [True] + [False] * 7)
     check("gallery: arrow keys move the selection by column and row", selected["selection"] == [0, 11], str(selected["selection"]))
     check("gallery: Home selects the first image", home["selection"] == [0, 0], str(home["selection"]))
     check("gallery: Page Down moves the selection several rows", paged["selection"] not in ([0, 0], home["selection"]) and paged["selection"][0] >= 0,
@@ -110,6 +114,12 @@ def gallery(session):
     last_roll, last_index = end["selection"]
     check("gallery: End selects the last image of the last roll",
           last_roll > 0 and last_index == end["rolls"][last_roll]["images"] - 1, str(end["selection"]))
+    check("gallery: dragging a frame offers its file to other programs",
+          dragged["dragged_out"] is not None and dragged["dragged_out"].endswith("DSC00001.ARW") and dragged["mode"] == "Gallery",
+          str(dragged["dragged_out"]))
+    check("gallery: the right-click menu's actions go to the selected image",
+          shown["handed_over"] is not None and shown["handed_over"][0] == "Shown in its folder"
+          and shown["handed_over"][1].endswith("DSC00001.ARW") and shown["selection"] == [0, 1], str(shown["handed_over"]))
     check("gallery: toggle-all expands every roll", all(roll["expanded"] for roll in expanded["rolls"]))
     check("gallery: toggle-all twice returns to all expanded", all(roll["expanded"] for roll in collapsed["rolls"]))
     check("gallery: sort cycles to name descending",
@@ -200,6 +210,16 @@ def viewer_close(session):
     check("viewer close: Escape returns to the gallery and leaves fullscreen",
           states[0]["fullscreen"] is True and states[1]["mode"] == "Gallery" and states[1]["fullscreen"] is False)
     check("viewer close: the last viewed image is selected", states[1]["selection"] == [0, 2], str(states[1]["selection"]))
+
+    # The round buttons at the window's edges, shown while the pointer is near them.
+    states = session.run(session.photos, [
+        f"click:{FIRST_FRAME}", f"move:{NEXT_BUTTON}", f"click:{NEXT_BUTTON}", "dump",
+        f"move:{CLOSE_BUTTON}", f"click:{CLOSE_BUTTON}", "dump", "quit",
+    ])
+    check("viewer close: the next button at the right edge steps forward",
+          len(states) == 2 and states[0]["mode"] == "Viewer" and states[0]["viewer"]["index"] == 1, str(states and states[0]["viewer"]))
+    check("viewer close: the close button at the top right returns to the gallery",
+          len(states) == 2 and states[1]["mode"] == "Gallery", str(states and states[-1]["mode"]))
 
 
 def rotation(session):
@@ -304,6 +324,14 @@ def startup(session):
     check("startup: dropping a folder opens it in the gallery",
           len(states) == 2 and states[1]["mode"] == "Gallery" and states[1]["folder"].endswith("shoot"))
 
+    odd = session.photos / "odd files"
+    states = session.run(odd / "png_named.jpg", ["dump", "escape", "dump", "quit"])
+    view = states[0]["viewer"] if states else None
+    check("startup: a file named .jpg that holds a PNG opens",
+          bool(view) and view["loaded"] and view["source"] == "Bitmap" and view["size"] == [800, 600], str(view))
+    check("startup: and gets a thumbnail", len(states) == 2 and states[1]["rolls"][0]["images"] == 1 and states[1]["toast"] is None,
+          str(states and states[-1]["toast"]))
+
     states = session.run(session.photos, ["dump", "quit"], extra=["--offscreen", "--fullscreen"])
     check("startup: --fullscreen starts fullscreen", len(states) == 1 and states[0]["fullscreen"] is True)
 
@@ -323,8 +351,8 @@ def nested(session):
     titles = [roll["title"] for roll in listed["rolls"]]
     counts = [roll["images"] for roll in listed["rolls"]]
     check("nested: every nested folder becomes a roll after its parent",
-          titles == ["shoot", "2026-05 Berlin", "2026-06 Wedding", "archive", "2019", "empty", "raw only", "small preview"], str(titles))
-    check("nested: all rolls are listed without scrolling to them", counts == [15, 40, 14, 0, 3, 0, 6, 1], str(counts))
+          titles == ["shoot", "2026-05 Berlin", "2026-06 Wedding", "archive", "2019", "empty", "odd files", "raw only", "small preview"], str(titles))
+    check("nested: all rolls are listed without scrolling to them", counts == [15, 40, 14, 0, 3, 0, 1, 6, 1], str(counts))
     check("nested: a deeper roll knows its parent folders", listed["rolls"][4]["trail"] == ["archive"], str(listed["rolls"][4]))
     view = into_next["viewer"]
     check("nested: stepping past the last image enters the next roll",
@@ -341,9 +369,9 @@ def nested(session):
 
     states = session.run("--timing", ["dump", "nested", "dump", f"click:{FIRST_FRAME}", "last", "next", "dump", "quit"])
     check("nested: the choice is kept for the next start",
-          len(states) == 3 and states[0]["nested"] is True and len(states[0]["rolls"]) == 8)
+          len(states) == 3 and states[0]["nested"] is True and len(states[0]["rolls"]) == 9)
     check("nested: switching it off shows direct subfolders only",
-          len(states) == 3 and states[1]["nested"] is False and len(states[1]["rolls"]) == 7)
+          len(states) == 3 and states[1]["nested"] is False and len(states[1]["rolls"]) == 8)
     check("nested: without it, stepping stays inside the roll",
           len(states) == 3 and states[2]["viewer"]["roll"] == 0 and states[2]["viewer"]["index"] == 14)
 

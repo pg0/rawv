@@ -15,7 +15,7 @@ use std::fs::{File, FileTimes, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
-use super::formats::Kind;
+use super::formats::{self, Kind};
 use super::xmp::{self, Rating};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -115,6 +115,9 @@ fn xmp_segment(packet: &[u8]) -> io::Result<Vec<u8>> {
 
 fn rate_jpeg(path: &Path, rating: Rating) -> io::Result<RateOutcome> {
     let data = std::fs::read(path)?;
+    if !formats::is_jpeg(&data) {
+        return Ok(RateOutcome::Unsupported);
+    }
     let layout = jpeg_layout(&data)?;
     let rebuilt = match layout.packet {
         Some((start, length)) => {
