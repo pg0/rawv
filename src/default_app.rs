@@ -183,8 +183,9 @@ pub fn unregister() -> io::Result<()> {
 
 /// Opens the Settings page where the user picks rawv for each file type.
 pub fn open_settings() -> io::Result<()> {
-    std::process::Command::new("explorer.exe")
-        .arg(SETTINGS_PAGE)
+    // Explorer does not open ms-settings: links handed to it on the command line.
+    std::process::Command::new("rundll32.exe")
+        .args(["url.dll,FileProtocolHandler", SETTINGS_PAGE])
         .spawn()
         .map(|_| ())
 }
