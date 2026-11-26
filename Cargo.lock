@@ -577,8 +577,6 @@ checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
 [[package]]
 name = "drag"
 version = "2.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e90b4a25ace5ce0561534b073943594cbcd21af936e64d09aec444568411f8c"
 dependencies = [
  "core-graphics 0.24.0",
  "dunce",
@@ -2833,7 +2831,7 @@ dependencies = [
 
 [[package]]
 name = "rawv"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bytemuck",
  "chrono",

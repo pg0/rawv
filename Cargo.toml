@@ -1,6 +1,6 @@
 [package]
 name = "rawv"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 default-run = "rawv"
 
@@ -24,6 +24,9 @@ winreg = "0.56.0"
 zune-core = "0.5.3"
 zune-heic = "0.5.0"
 zune-jpeg = "0.5.15"
+
+[patch.crates-io]
+drag = { path = "vendor/drag" }
 
 [profile.release]
 opt-level = 3

@@ -28,9 +28,9 @@ SECOND_ROLL_TITLE = "60,299"
 CENTER = "750,475"
 NEXT_BUTTON = "1465,475"
 CLOSE_BUTTON = "1469,31"
-CLEAR_CACHES_BUTTON = "803,477"
-ARROW_KEYS_LIST = "803,389"
-NEXT_PREVIOUS_CHOICE = "747,440"
+CLEAR_CACHES_BUTTON = "803,466"
+ARROW_KEYS_LIST = "803,379"
+NEXT_PREVIOUS_CHOICE = "747,430"
 
 failures = []
 
@@ -75,7 +75,7 @@ class Session:
 
 
 def cli(*arguments):
-    return subprocess.run([str(CLI), *map(str, arguments)], capture_output=True, text=True, timeout=120).stdout
+    return subprocess.run([str(CLI), *map(str, arguments)], capture_output=True, text=True, encoding="utf-8", timeout=120).stdout
 
 
 def probe(path, field="orientation"):
@@ -399,6 +399,12 @@ def settings(session):
     states = session.run(session.photos, ["settings", f"click:{ARROW_KEYS_LIST}", f"click:{NEXT_PREVIOUS_CHOICE}", "dump", "quit"])
     chosen = states[0]["arrows"] if states else None
     check("settings: a value is picked from a list", chosen == "Step", str(chosen))
+    import tomllib
+    version = tomllib.loads((REPO / "Cargo.toml").read_text(encoding="utf-8"))["package"]["version"]
+    commit = subprocess.run(["git", "rev-parse", "--short=7", "HEAD"], cwd=REPO, capture_output=True, text=True).stdout.strip()
+    shown = cli("--version").strip()
+    check("settings: the build names its version and commit",
+          shown in (f"rawv {version} \u00b7 {commit}", f"rawv {version} \u00b7 {commit}+"), shown)
 
 
 def window(session):

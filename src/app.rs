@@ -1039,6 +1039,12 @@ impl App {
                     .font(theme::body(11.0))
                     .color(theme::FAINT),
                 );
+                ui.add_space(6.0);
+                ui.label(
+                    RichText::new(crate::build_name())
+                        .font(theme::mono(11.0))
+                        .color(theme::FAINT),
+                );
             });
         if modal.should_close() {
             commands.push(Command::Escape);

@@ -19,6 +19,7 @@ target/release/rawv-cli remove <file> [--permanently]          # what the Delete
 target/release/rawv-cli rate <file> <-1..5>                    # writes a rating like the number keys
 target/release/rawv-cli pixels <file>                          # checksum of the decoded picture
 target/release/rawv-cli register [<rawv.exe>] | unregister    # file type registration for the current user
+target/release/rawv-cli --version                              # the version, also shown at the bottom of the settings
 python tools/make_icon.py                                      # redraws assets/rawv.ico; needs pillow
 ```
 
@@ -31,13 +32,13 @@ input of the person at the computer.
 
 ## Release
 
-The version stays 0.1.1 (`Cargo.toml`, tag `v0.1.1`) whatever changes, until the owner asks
+The version stays 0.1.2 (`Cargo.toml`, tag `v0.1.2`) whatever changes, until the owner asks
 for a new release; then both change together and a new GitHub release is made. A release is `dist/rawv-windows-x64.zip` with both executables and the
 README, attached to the GitHub release:
 
 ```
 cargo build --release && python tools/package.py      # writes dist/rawv-windows-x64.zip
-gh release upload v0.1.1 dist/rawv-windows-x64.zip --clobber
+gh release upload v0.1.2 dist/rawv-windows-x64.zip --clobber
 ```
 
 The executables link the C runtime statically (`.cargo/config.toml`) and need nothing installed.
@@ -60,6 +61,7 @@ The executables link the C runtime statically (`.cargo/config.toml`) and need no
 | `src/default_app.rs` | Registers rawv for its file types (HKCU), opens the Default apps page |
 | `assets/` | `rawv.ico`, the only source of the icon: `build.rs` puts it into both executables |
 | `tools/` | Verification driver and test photo generator |
+| `vendor/drag/` | The `drag` crate 2.1.1 (`[patch.crates-io]`), changed so files on network shares can be dragged out: it handed the shell `\\?\UNC\` paths, which the shell rejects, and panicked. Tests: `cargo test --manifest-path vendor/drag/Cargo.toml --lib` |
 
 ## Rules
 

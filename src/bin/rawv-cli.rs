@@ -19,8 +19,12 @@ fn main() -> ExitCode {
         [command] if command == "unregister" => {
             rawv::default_app::unregister().map_err(|e| e.to_string())
         }
+        [flag] if flag == "--version" || flag == "version" => {
+            println!("{}", rawv::build_name());
+            Ok(())
+        }
         _ => Err(
-            "usage: rawv-cli probe <file> | bench <file-or-folder> | pixels <file> | rate <file> <-1..5> | remove <file> [--permanently] | register [<rawv.exe>] | unregister"
+            "usage: rawv-cli probe <file> | bench <file-or-folder> | pixels <file> | rate <file> <-1..5> | remove <file> [--permanently] | register [<rawv.exe>] | unregister | --version"
                 .to_owned(),
         ),
     };
